@@ -136,6 +136,53 @@ try {
       }
     }
   }
+
+  // ---------- drumline, alone and as the lightbox's filmstrip ----------
+  for (const profile of [
+    { name: "desktop", ctx: { viewport: { width: 1440, height: 900 } }, throttle: 1 },
+    { name: "iphone 4x", ctx: { ...(devices["iPhone 15"] || devices["iPhone 14"]), userAgent: undefined }, throttle: 4 },
+    { name: "android 4x", ctx: { ...(devices["Pixel 7"] || devices["Pixel 5"]), userAgent: undefined }, throttle: 4 },
+  ]) {
+    for (const [label, opts] of [["drumline bend webgl", { preset: "ruler" }], ["drumline bend dom", { preset: "ruler", renderer: "dom" }], ["drumline chain", { preset: "numbers" }], ["drumline lerp", { preset: "minimal" }], ["lightbox + strip", { strip: "ruler" }]]) {
+      const ctx = await browser.newContext(profile.ctx);
+      const page = await ctx.newPage();
+      await page.goto(url, { waitUntil: "networkidle" });
+      await page.evaluate(SETUP);
+      const cdp = await ctx.newCDPSession(page);
+      await page.evaluate(async (o) => {
+        const m = await import("./lib/index.js");
+        const ids = ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", "h17", "h11", "h03", "h18"];
+        const items = [...ids, ...ids].map((id) => ({ src: `photos/${id}.jpg`, thumb: `photos/${id}-800.jpg` }));
+        await Promise.all(ids.map((id) => fetch(`photos/${id}-800.jpg`).then((r) => r.blob())));
+        if (o.strip) { window.__u = m.unfurl(items, { start: 5, strip: o.strip }); return; }
+        const host = document.createElement("div");
+        host.style.cssText = "position:fixed;left:0;right:0;top:120px;z-index:9;background:#141412;color:#ddd;padding:20px 0";
+        document.body.append(host);
+        window.__d = m.drumline(host, items, { start: 5, ...o });
+      }, opts);
+      await page.waitForTimeout(1500);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: profile.throttle });
+      const vp = page.viewportSize();
+      const sel = opts.strip ? ".fk-unfurl-strip .fk-dl-viewport" : ".fk-dl-viewport";
+      const box = await page.locator(sel).first().boundingBox();
+      const y = box.y + box.height / 2, x0 = Math.round(vp.width * 0.75), x1 = Math.round(vp.width * 0.25);
+      await page.evaluate(() => window.__rec.start());
+      if (profile.ctx.hasTouch) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y }] });
+        for (let i = 1; i <= 10; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 + ((x1 - x0) * i) / 10, y }] }); await page.waitForTimeout(16); }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } else {
+        await page.mouse.move(x0, y); await page.mouse.down();
+        for (let i = 1; i <= 10; i++) { await page.mouse.move(x0 + ((x1 - x0) * i) / 10, y); await page.waitForTimeout(16); }
+        await page.mouse.up();
+      }
+      await page.waitForTimeout(1400);
+      const s = stats(await page.evaluate(() => window.__rec.stop()));
+      const renderer = await page.evaluate(() => window.__d?.renderer ?? (document.querySelector(".fk-unfurl-strip.fk-dl-gl") ? "webgl" : "dom"));
+      rows.push({ profile: profile.name, renderer, scenario: label + " drag", ...s });
+      await ctx.close();
+    }
+  }
 } finally {
   await browser.close();
   server.close();
@@ -148,5 +195,6 @@ console.log(`\ncold start (first WebGL lightbox in a fresh browser): ${coldStart
 if (jsonOut) await writeFile(jsonOut, JSON.stringify({ coldStart, rows }, null, 2));
 
 // Targets: desktop about 60 fps; the CSS renderer at 4x keeps p95 frames near 20 ms.
-const misses = rows.filter((r) => (r.profile === "desktop" && r.fps < 55) || (r.profile === "iphone 4x" && r.renderer === "css" && r.p95 > 21));
+// drumline on a slowed phone: about 50 fps or better (WebGL hands over to the DOM when it cannot).
+const misses = rows.filter((r) => (r.profile === "desktop" && r.fps < 55) || (r.profile === "iphone 4x" && r.renderer === "css" && r.p95 > 21) || (r.scenario.startsWith("drumline") && r.profile !== "desktop" && r.fps < 48));
 if (misses.length) { console.log(`\n${misses.length} below target`); process.exitCode = 1; } else console.log("\nall within target");

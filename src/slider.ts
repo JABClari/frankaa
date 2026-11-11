@@ -3,20 +3,12 @@
 // show on hover with a mouse and step one photo, and photos past the first load only once the slider comes near
 // the screen (or is touched). Optional: loop, autoplay (off by default, with a pause button), proximity snap.
 import { clampIndex, indexAt } from "./slider-math";
+import { readArgs, slideSrc, type ImageItem, type Item, type Items } from "./items";
 import { fill, nextIndex, resolveReduced, sliderKey, type ReducedMotion } from "./shared";
 import { CHEVRON, CHEVRON_LEFT, PAUSE, PLAY, el, emitter, icon, placeholderStyle, systemReduces, type Icons } from "./dom";
 
-export type Photo = {
-  src: string;
-  srcset?: string;
-  sizes?: string;
-  alt?: string;
-  width?: number;
-  height?: number;
-  /** Shown until the photo paints: a colour ("#d9cbb5") or an image address (a tiny thumbnail, or a blurhash you
-   *  decoded to a data URL). */
-  placeholder?: string;
-};
+/** A picture for the slider: the shared item format (see items.ts). The slider shows src (a video's poster). */
+export type Photo = ImageItem;
 
 export type ProcessionLabels = {
   /** The slider's name. Default "Photos". */
@@ -51,8 +43,10 @@ export type ProcessionHooks = {
 };
 
 export type ProcessionOptions = ProcessionHooks & {
-  /** The photos, in order. Strings are taken as `src`. */
-  photos: (Photo | string)[];
+  /** The items, in order (the shared format; strings are taken as src). Or pass them as the second argument. */
+  items?: Items;
+  /** The older name for items. */
+  photos?: Items;
   /** Shorthand for labels.region. */
   label?: string;
   /** Every string the slider shows or reads out, for other languages. */
@@ -73,6 +67,9 @@ export type ProcessionOptions = ProcessionHooks & {
   priority?: boolean;
   /** How near the screen before the other photos load. Default "100px". */
   lazyMargin?: string;
+  /** When the other photos load: "near" (default) once the slider comes near the screen; "idle" also loads the
+   *  next photo when the page has loaded and the browser is idle; false only when touched or moved. */
+  preload?: "near" | "idle" | false;
   /** "system" (default), "always" or "never". Reduced motion: steps jump, no autoplay. */
   reducedMotion?: ReducedMotion;
   /** Announce each change through a polite live region. Default true. */
@@ -113,11 +110,16 @@ export type Procession = {
   destroy(): void;
 };
 
-const toPhoto = (p: Photo | string): Photo => (typeof p === "string" ? { src: p } : p);
-
-/** Turn an element into a photo slider. The element's own children are left alone; the slider adds its own. */
-export function procession(root: HTMLElement, options: ProcessionOptions): Procession {
-  const photos = options.photos.map(toPhoto);
+/**
+ * Turn an element into a photo slider: procession(el, items, options) or procession(el, { items, ...options }).
+ * The element's own children are left alone; the slider adds its own.
+ */
+export function procession(root: HTMLElement, items: Items, options?: Omit<ProcessionOptions, "items" | "photos">): Procession;
+export function procession(root: HTMLElement, options: ProcessionOptions): Procession;
+export function procession(root: HTMLElement, a: Items | ProcessionOptions, b?: Omit<ProcessionOptions, "items" | "photos">): Procession {
+  const { items, options } = readArgs<ProcessionOptions>(a, b);
+  // The slider draws pictures: a video item shows its poster.
+  const photos: ImageItem[] = items.map((x: Item) => (x.type === "video" ? { src: slideSrc(x), alt: x.alt, placeholder: x.placeholder } : x));
   const n = photos.length;
   const L: ProcessionLabels = { ...PROCESSION_LABELS, ...(options.label ? { region: options.label } : {}), ...options.labels };
   const loop = !!options.loop;
@@ -151,7 +153,13 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
     if (p.sizes) img.sizes = p.sizes;
     placeholderStyle(img, p.placeholder);
     img.addEventListener("error", () => emit("onError", { index: i, src: p.src, reason: "load" }), { once: true });
-    track.append(img);
+    // Art direction: <source media srcset> per slide, inside a <picture> that lays out as if it were not there.
+    if (p.sources?.length) {
+      const pic = el("picture", "fk-pic");
+      for (const src of p.sources) pic.append(el("source", "", { media: src.media, ...(src.type ? { type: src.type } : {}), ...(src.sizes ? { sizes: src.sizes } : {}) }));
+      pic.append(img);
+      track.append(pic);
+    } else track.append(img);
     return img;
   });
   const loaded = new Set<number>();
@@ -159,6 +167,10 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
     if (loaded.has(i) || !photos[i]) return;
     loaded.add(i);
     const p = photos[i];
+    if (p.sources?.length) {
+      const sources = imgs[i].parentElement!.querySelectorAll("source");
+      p.sources.forEach((src, k) => { sources[k].srcset = src.srcset; });
+    }
     if (p.srcset) imgs[i].srcset = p.srcset;
     imgs[i].src = p.src;
   };
@@ -170,14 +182,21 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
   if (ssr && typeof imgs[at]?.decode === "function") imgs[at].decode().then(ready, ready); else ready();
   let near = false;
   const loadAll = () => { for (let i = 0; i < n; i++) load(i); };
-  const io = typeof IntersectionObserver === "function"
+  const preload = options.preload === undefined ? "near" : options.preload;
+  const io = preload !== false && typeof IntersectionObserver === "function"
     ? new IntersectionObserver((es) => {
         near = es.some((e) => e.isIntersecting);
         if (near) loadAll();
         sync();
       }, { rootMargin: options.lazyMargin ?? "100px" })
     : null;
-  if (io) io.observe(root); else { near = true; loadAll(); }
+  if (io) io.observe(root); else if (preload !== false) { near = true; loadAll(); }
+  // "idle": the next photo loads once the page has loaded and the browser has a moment.
+  if (preload === "idle" && n > 1) {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+    const next = () => (w.requestIdleCallback ? w.requestIdleCallback(() => load(at + 1), { timeout: 2000 }) : setTimeout(() => load(at + 1), 200));
+    if (document.readyState === "complete") next(); else window.addEventListener("load", next, { once: true });
+  }
 
   const added: Element[] = [track];
   root.append(track);
@@ -350,7 +369,13 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
     const touchTap = options.zoom && lastPointer !== "mouse" && e.detail <= 1 && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0;
     if (!touchTap) {
       // Mouse: a double click zooms; single clicks select at once (the browser keeps link clicks as they are).
-      if (options.zoom && e.detail === 2) { e.preventDefault(); toggleZoom(e.clientX, e.clientY); return; }
+      if (options.zoom && e.detail === 2) {
+        // The second click of a double tap or double click: zoom, and drop the first tap's waiting select.
+        e.preventDefault();
+        if (lastTap) { clearTimeout(lastTap.timer); lastTap = null; }
+        toggleZoom(e.clientX, e.clientY);
+        return;
+      }
       if (options.onSelect) select(e);
       return;
     }

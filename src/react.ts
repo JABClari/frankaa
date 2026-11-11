@@ -1,41 +1,60 @@
 // Thin React bindings. The core does the work; these only mount it, keep the latest callbacks, and clean up.
 // Safe to import during server rendering: nothing touches the DOM until an effect runs.
+//   <Procession items={items} />            the slider
+//   <Drumline items={items} preset="ruler" />  the strip
+//   const lb = useUnfurl(items, { strip: "ruler" }); lb.open(i)   the lightbox (with its filmstrip)
 import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { procession, type Procession as Slider, type ProcessionOptions } from "./slider";
 import { unfurl, type Unfurl, type UnfurlApi, type UnfurlOptions } from "./lightbox";
+import { drumline, type Drumline as DrumlineCore, type DrumlineOptions } from "./drumline";
+import { slideSrc, toItem, type Items } from "./items";
 
-export type ProcessionProps = ProcessionOptions & { className?: string; style?: CSSProperties };
-export type ProcessionHandle = Slider;
-
-// The placeholder as React style (a colour, or an image address), matching what the slider sets.
+// The placeholder as React style (a colour, or an image address), matching what the parts set.
 function placeholderCss(v: string | undefined): CSSProperties | undefined {
   if (!v) return undefined;
   const t = v.trim();
   return /^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(t) || /^[a-z]+$/i.test(t) ? { backgroundColor: t } : { backgroundImage: `url(${JSON.stringify(t)})`, backgroundSize: "cover", backgroundPosition: "center" };
 }
 
-// Every on* option is wrapped so it always calls the latest prop without rebuilding the slider or lightbox.
+// Every on* option is wrapped so it always calls the latest prop without rebuilding.
 function latestHooks<T extends object>(ref: { current: T }, keys: string[]): Partial<T> {
   const out: Record<string, unknown> = {};
   for (const k of keys) if (k.startsWith("on")) out[k] = (...a: unknown[]) => (ref.current as Record<string, ((...x: unknown[]) => void) | undefined>)[k]?.(...a);
   return out as Partial<T>;
 }
+const listOf = (p: { items?: Items; photos?: Items }): Items => p.items ?? p.photos ?? [];
+const keyOf = (items: Items) => items.map((x) => (typeof x === "string" ? x : x.src)).join("\n");
+// Everything but functions and React's own props: when this changes, the part is rebuilt.
+const optionsKey = (p: Record<string, unknown>) => JSON.stringify(p, (k, v) => (typeof v === "function" || k === "items" || k === "photos" || k === "className" || k === "style" || k === "children" ? undefined : v));
 
-/** The photo slider. A ref gives the slider's controls (index, go, next, prev, play, pause, image). */
+/**
+ * React StrictMode mounts, unmounts and mounts again in development. Tidying up a moment later, and only if no
+ * remount came, keeps that from closing or rebuilding things for real.
+ */
+function useLaterCleanup() {
+  const timer = useRef(0);
+  useEffect(() => { clearTimeout(timer.current); }, []);
+  return (f: () => void) => { clearTimeout(timer.current); timer.current = window.setTimeout(f, 0); };
+}
+
+export type ProcessionProps = ProcessionOptions & { className?: string; style?: CSSProperties };
+export type ProcessionHandle = Slider;
+
+/** The slider. A ref gives its controls (index, go, next, prev, play, pause, image). */
 export const Procession = forwardRef<ProcessionHandle | null, ProcessionProps>(function Procession(props, ref) {
   const root = useRef<HTMLDivElement>(null);
   const inst = useRef<Slider | null>(null);
   const latest = useRef(props);
   latest.current = props;
-  // Rebuild only when the photos or the shape-changing options change.
-  const key = [props.photos.map((p) => (typeof p === "string" ? p : p.src)).join("\n"), props.loop, props.autoplay, props.snap, props.dots, props.arrows, props.reducedMotion, JSON.stringify(props.labels ?? null), props.label, props.href, props.tabbable, props.counter, props.zoom, props.zoomCursor, props.focusRing, JSON.stringify(props.icons ?? null)].join("|");
+  const items = listOf(props);
+  const key = keyOf(items) + "|" + optionsKey(props as Record<string, unknown>);
   useEffect(() => {
     const el = root.current;
     if (!el) return;
     const { className: _c, style: _s, ...p } = latest.current;
     const hooks = latestHooks(latest, Object.keys(p));
-    const s = procession(el, { ...p, ...hooks, onSelect: p.onSelect ? hooks.onSelect : undefined });
+    const s = procession(el, listOf(p), { ...p, ...hooks, onSelect: p.onSelect ? hooks.onSelect : undefined });
     inst.current = s;
     return () => { s.destroy(); inst.current = null; };
   }, [key]);
@@ -50,43 +69,87 @@ export const Procession = forwardRef<ProcessionHandle | null, ProcessionProps>(f
     image: (i) => inst.current?.image(i),
     destroy: () => inst.current?.destroy(),
   }), []);
-  // On the server (and the first client render) the slider's first photo is already there, so the first paint is
-  // never empty; the slider keeps it until its own photo has decoded.
-  const first = props.photos[Math.max(0, Math.min(props.photos.length - 1, props.start ?? 0))];
-  const p = typeof first === "string" ? { src: first } : first;
-  const ssr = p
+  // On the server (and the first client render) the first picture is already there, so the first paint is never
+  // empty; the slider keeps it until its own picture has decoded.
+  const raw = items[Math.max(0, Math.min(items.length - 1, props.start ?? 0))];
+  const first = raw === undefined ? null : toItem(raw);
+  const img = first && first.type !== "video" ? first : null;
+  const ssr = first
     ? createElement("img", {
-        className: "fk-ssr", src: p.src, srcSet: p.srcset, sizes: p.sizes, alt: "", "aria-hidden": true,
-        width: p.width ?? 1200, height: p.height ?? 900, decoding: "async", loading: props.priority ? "eager" : "lazy",
-        draggable: false, style: placeholderCss(p.placeholder),
+        className: "fk-ssr", src: slideSrc(first), srcSet: img?.srcset, sizes: img?.sizes, alt: "", "aria-hidden": true,
+        width: img?.width ?? 1200, height: img?.height ?? 900, decoding: "async", loading: props.priority ? "eager" : "lazy",
+        draggable: false, style: placeholderCss(first.placeholder),
       })
     : null;
   return createElement("div", { ref: root, className: props.className ? `fk-procession ${props.className}` : "fk-procession", style: props.style, suppressHydrationWarning: true }, ssr);
 });
 
-export type UseUnfurlOptions = Omit<UnfurlOptions, "photos" | "start" | "controls"> & {
+export type DrumlineProps = DrumlineOptions & { className?: string; style?: CSSProperties };
+export type DrumlineHandle = DrumlineCore;
+
+/** The drumline strip: <Drumline items={items} preset="ruler" />. A ref gives its controls. */
+export const Drumline = forwardRef<DrumlineHandle | null, DrumlineProps>(function Drumline(props, ref) {
+  const root = useRef<HTMLDivElement>(null);
+  const inst = useRef<DrumlineCore | null>(null);
+  const latest = useRef(props);
+  latest.current = props;
+  const key = keyOf(listOf(props)) + "|" + optionsKey(props as Record<string, unknown>);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const { className: _c, style: _s, ...p } = latest.current;
+    const hooks = latestHooks(latest, Object.keys(p));
+    const d = drumline(el, listOf(p), { ...p, ...hooks, onSelect: p.onSelect ? hooks.onSelect : undefined });
+    inst.current = d;
+    return () => { d.destroy(); inst.current = null; };
+  }, [key]);
+  useImperativeHandle(ref, () => ({
+    get index() { return inst.current?.index ?? 0; },
+    get renderer() { return inst.current?.renderer ?? "dom"; },
+    get el() { return root.current as HTMLElement; },
+    go: (i, smooth) => inst.current?.go(i, smooth),
+    next: () => inst.current?.next(),
+    prev: () => inst.current?.prev(),
+    expand: (i) => inst.current?.expand(i),
+    image: (i) => inst.current?.image(i),
+    destroy: () => inst.current?.destroy(),
+  }), []);
+  return createElement("div", { ref: root, className: props.className ? `fk-drumline ${props.className}` : "fk-drumline", style: props.style });
+});
+
+export type UseUnfurlOptions = Omit<UnfurlOptions, "items" | "photos" | "start" | "controls"> & {
   /** Your own controls in the top bar (before Close, inside the focus trap). Render `lightbox.portal` anywhere in
    *  your tree for them to appear; they keep your React context. */
   renderControls?: (api: UnfurlApi) => ReactNode;
+  /** The component unmounted while the lightbox was open. Unmounting does not fire onCloseStart or onCloseEnd
+   *  (and React StrictMode's practice unmount in development does nothing at all). */
+  onDestroy?: (d: { index: number }) => void;
 };
 
 /**
- * The lightbox as a hook: `const lightbox = useUnfurl(photos, { origin })`, then `lightbox.open(i)`.
- * Options are read when it opens; hooks (onChange, onCloseEnd, ...) always see the latest props.
- * With renderControls, render `{lightbox.portal}` somewhere in your component. It closes on unmount (firing
- * onCloseStart and onCloseEnd with reason "destroy").
+ * The lightbox as a hook: `const lightbox = useUnfurl(items, { origin, strip: "ruler" })`, then `lightbox.open(i)`.
+ * Options are read when it opens; hooks always see the latest props. With renderControls, render
+ * `{lightbox.portal}` somewhere in your component.
  */
-export function useUnfurl(photos: UnfurlOptions["photos"], options: UseUnfurlOptions = {}) {
+export function useUnfurl(items: Items, options: UseUnfurlOptions = {}) {
   const inst = useRef<Unfurl | null>(null);
-  const latest = useRef({ photos, ...options } as UnfurlOptions & UseUnfurlOptions);
-  latest.current = { photos, ...options };
+  const latest = useRef({ items, ...options } as UnfurlOptions & UseUnfurlOptions);
+  latest.current = { items, ...options };
   const [slot, setSlot] = useState<{ host: HTMLElement; api: UnfurlApi; index: number } | null>(null);
-  useEffect(() => () => { inst.current?.destroy(); inst.current = null; }, []);
+  const later = useLaterCleanup();
+  useEffect(() => () => later(() => {
+    const u = inst.current;
+    if (!u) return;
+    inst.current = null;
+    const index = u.index;
+    u.destroy({ hooks: false });
+    latest.current.onDestroy?.({ index });
+  }), []);
   const open = useCallback((start = 0) => {
-    inst.current?.destroy();
-    const { renderControls, ...o } = latest.current;
+    inst.current?.destroy({ hooks: false });
+    const { renderControls, onDestroy: _d, items: list, ...o } = latest.current;
     const hooks = latestHooks(latest, ["onOpenStart", "onOpenEnd", "onCloseStart", "onAnimationStart", "onAnimationEnd", "onError"]);
-    inst.current = unfurl({
+    inst.current = unfurl(list ?? [], {
       ...o, ...hooks, start,
       controls: renderControls ? (host, api) => { setSlot({ host, api, index: api.index }); return () => setSlot(null); } : undefined,
       onChange: (i, d) => { setSlot((s) => (s ? { ...s, index: i } : s)); latest.current.onChange?.(i, d); },
@@ -99,5 +162,5 @@ export function useUnfurl(photos: UnfurlOptions["photos"], options: UseUnfurlOpt
   return { open, close, portal, get current() { return inst.current; } };
 }
 
-export { procession, unfurl };
-export type { ProcessionOptions, UnfurlOptions, Unfurl };
+export { procession, unfurl, drumline };
+export type { ProcessionOptions, UnfurlOptions, Unfurl, DrumlineOptions, Items };

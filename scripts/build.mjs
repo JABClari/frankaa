@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 rmSync("dist", { recursive: true, force: true });
 await build({
-  entryPoints: { index: "src/index.ts", slider: "src/slider.ts", lightbox: "src/lightbox.ts", react: "src/react.ts" },
+  entryPoints: { index: "src/index.ts", slider: "src/slider.ts", lightbox: "src/lightbox.ts", drumline: "src/drumline.ts", react: "src/react.ts" },
   outdir: "dist",
   bundle: true,
   splitting: true,
@@ -53,7 +53,7 @@ const deps = (file, seen = new Set()) => {
 };
 const kb = (b) => (b / 1024).toFixed(2) + " kB";
 console.log("\nentry              min        gzip");
-for (const e of ["slider", "lightbox", "index", "react"]) {
+for (const e of ["slider", "lightbox", "drumline", "index", "react"]) {
   const files = [...deps(`dist/${e}.js`)];
   const all = Buffer.concat(files.map(read));
   console.log(`frankaa/${e.padEnd(10)} ${kb(all.length).padStart(9)}  ${kb(gzipSync(all, { level: 9 }).length).padStart(9)}`);

@@ -1,6 +1,6 @@
 # AGENTS.md: integrating frankaa
 
-Guidance for AI coding agents adding frankaa (a photo slider and lightbox) to a project. The full API with recipes is in `llms-full.txt` (also at `node_modules/frankaa/llms-full.txt` after install).
+Guidance for AI coding agents adding frankaa (a photo slider, a lightbox and drumline, a strip under a ruler) to a project. The full API with recipes is in `llms-full.txt` (also at `node_modules/frankaa/llms-full.txt` after install).
 
 ## Install
 
@@ -16,11 +16,16 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 | --- | --- |
 | Slider only | `import { procession } from "frankaa/slider"` |
 | Lightbox only | `import { unfurl } from "frankaa/lightbox"` |
+| Strip only | `import { drumline } from "frankaa/drumline"` |
 | Both | `import { procession, unfurl } from "frankaa"` |
-| React | `import { Procession, useUnfurl } from "frankaa/react"` |
+| React | `import { Procession, Drumline, useUnfurl } from "frankaa/react"` |
 | Styles (always, once) | `import "frankaa/style.css"` |
 
 ## Decision rules
+
+- **One list.** Build one items array (`{ src, thumb?, full?, alt }`) and pass it to every part; never map it into separate shapes.
+- **Combining is an option**: the lightbox's filmstrip is `strip: "ruler"` (or another preset); a drumline opens the lightbox by itself (`lightbox: { ... }` for its options). Do not hand-wire two components for this.
+- **drumline presets**: `"ruler"` (default), `"numbers"`, `"minimal"`; adjust single settings on top (`fluid`, `numbers`, `colorFocus`...). Keep `renderer: "auto"` for bend; it falls back to the DOM by itself.
 
 - **Renderer.** Keep the default `renderer: "auto"`. Choose `"css"` when the photos live on another origin that does not send CORS headers, when the project bans WebGL, or for the lightest path. Choose `"webgl"` only to make missing WebGL show up as an `onError`.
 - **CORS.** WebGL needs `Access-Control-Allow-Origin` on cross-origin photos. If you cannot add it, use `renderer: "css"`. Never strip `crossOrigin` or proxy images just to get WebGL.
@@ -63,3 +68,5 @@ GLSL ES 1.0 fragment shader with `precision mediump float;`, `varying vec2 vUv`,
 - [ ] Opening from a thumbnail springs from it and closing returns to it (the thumbnail is hidden while open).
 - [ ] No console errors. If photos are cross-origin, check for `frankaa:error` with `reason: "cors"` and fix CORS or use `renderer: "css"`.
 - [ ] SSR builds (Next.js `next build`) pass, with frankaa used only in client components.
+- [ ] On a phone: a vertical swipe over a slider or drumline scrolls the page; sideways swipes move it; the filmstrip sits above the home indicator.
+- [ ] React: unmounting does not fire your close hooks (use `onDestroy`), so no guards are needed for StrictMode.
