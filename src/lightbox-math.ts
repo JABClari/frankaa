@@ -50,7 +50,7 @@ export function swipeIntent(dx: number, dy: number, vx = 0, vy = 0): Swipe {
   if (Math.abs(dx) < 6 && Math.abs(dy) < 6 && Math.hypot(vx, vy) < 200) return "tap";
   if (Math.abs(dx) > Math.abs(dy)) {
     const back = vx * dx < 0 && Math.abs(vx) > 200;
-    if (!back && (Math.abs(dx) > 64 || (Math.abs(dx) > 12 && Math.abs(vx) > 400))) return dx < 0 ? "next" : "prev";
+    if (!back && (Math.abs(dx) > 48 || (Math.abs(dx) > 12 && Math.abs(vx) > 400))) return dx < 0 ? "next" : "prev";
     return null;
   }
   const back = vy < -200;

@@ -174,7 +174,19 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
       sp.target = cur.rest;
       void run();
     },
-    resize() { if (cur) { place(cur); sp.target = cur.rest; } },
+    resize() {
+      // Spring from where the photo is now to its new place, so a toolbar showing or hiding never makes it jump.
+      const l = cur;
+      if (!l) return;
+      const from = held || raf ? { ...sp.box } : { ...l.rest };
+      place(l);
+      sp.target = l.rest;
+      if (held) return;
+      sp.box = from;
+      if (ctx.still) sp.box = { ...l.rest };
+      paint(l, sp.box, ctx.rOpen);
+      void run();
+    },
     destroy() {
       dead = true;
       cancelAnimationFrame(raf);

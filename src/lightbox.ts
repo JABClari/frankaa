@@ -159,19 +159,39 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     if (e) { e.style.visibility = "hidden"; hidden = e; }
   };
 
-  // Lock the page without a layout jump where the scrollbar was.
-  const html = document.documentElement;
-  const prevOverflow = html.style.overflow, prevPad = html.style.paddingRight;
+  // Lock the page. overflow: hidden alone does not stop iOS Safari scrolling the page under a fixed overlay (and
+  // when Safari starts that pan it cancels our pointer, which kills swipes), so the body is pinned in place at its
+  // scroll position and given back on close. Padding stands in for the scrollbar so nothing shifts sideways.
+  const html = document.documentElement, body = document.body;
+  const lock = { x: window.scrollX, y: window.scrollY, html: html.getAttribute("style"), body: body.getAttribute("style") };
   const gap = window.innerWidth - html.clientWidth;
   html.style.overflow = "hidden";
-  if (gap > 0) html.style.paddingRight = `${gap}px`;
+  Object.assign(body.style, { position: "fixed", top: `${-lock.y}px`, left: `${-lock.x}px`, right: "0", width: "100%", overflow: "hidden" });
+  if (gap > 0) body.style.paddingRight = `${gap}px`;
+  const unlock = () => {
+    if (lock.html === null) html.removeAttribute("style"); else html.setAttribute("style", lock.html);
+    if (lock.body === null) body.removeAttribute("style"); else body.setAttribute("style", lock.body);
+    const behavior = html.style.scrollBehavior;
+    html.style.scrollBehavior = "auto";
+    window.scrollTo(lock.x, lock.y);
+    html.style.scrollBehavior = behavior;
+  };
 
   const setPhase = (p: Phase) => { phase = p; root.dataset.phase = p; };
 
   // ---------- Renderers ----------
   const ctx: StageCtx = {
     still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480,
-    area: () => stageBox(window.innerWidth, window.innerHeight),
+    // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
+    // areas, which the overlay carries as padding.
+    area: () => {
+      const r = root.getBoundingClientRect(), cs = getComputedStyle(root);
+      const px = (v: string) => parseFloat(v) || 0;
+      const pt = px(cs.paddingTop), pr = px(cs.paddingRight), pb = px(cs.paddingBottom), pl = px(cs.paddingLeft);
+      const w = r.width || window.innerWidth, h = r.height || window.visualViewport?.height || window.innerHeight;
+      const b = stageBox(w - pl - pr, h - pt - pb);
+      return { x: b.x + pl, y: b.y + pt, w: b.w, h: b.h };
+    },
   };
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
   let stage: Stage | null = null;
@@ -218,8 +238,11 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     emit("onOpenEnd", { index, renderer: stage!.kind });
   })();
 
-  const onResize = () => stage?.resize();
+  // Re-fit when the window or the visual viewport changes (Safari's toolbars, rotation); the photo springs there.
+  let fitFrame = 0;
+  const onResize = () => { cancelAnimationFrame(fitFrame); fitFrame = requestAnimationFrame(() => stage?.resize()); };
   window.addEventListener("resize", onResize);
+  window.visualViewport?.addEventListener("resize", onResize);
 
   // ---------- Moving ----------
   const show = (to: number, how: MoveHow, dir?: 1 | -1) => {
@@ -258,12 +281,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const teardown = () => {
     setPhase("closed");
     window.removeEventListener("resize", onResize);
+    window.visualViewport?.removeEventListener("resize", onResize);
+    cancelAnimationFrame(fitFrame);
     window.removeEventListener("keydown", onKey, true);
     stage?.destroy(); stage = null;
     hide(null);
     root.remove();
-    html.style.overflow = prevOverflow;
-    html.style.paddingRight = prevPad;
+    unlock();
     const back = options.returnFocus === false ? null : options.returnFocus instanceof HTMLElement ? options.returnFocus : before;
     if (back && document.contains(back)) back.focus({ preventScroll: true });
   };
@@ -338,6 +362,10 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     else if (intent === "prev" && n > 1) move(-1, "swipe");
     else if (intent === "close" || (intent === "tap" && !d.axis)) close();
   };
+  // iOS and Android: never let a touch on the overlay become a browser pan or zoom. A pan would scroll the page
+  // behind and fire pointercancel, which is what made sideways swipes fail. Taps and pointer events still work.
+  const noPan = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
+  root.addEventListener("touchmove", noPan, { passive: false });
   root.addEventListener("pointerup", (e) => end(e, false));
   root.addEventListener("pointercancel", (e) => end(e, true));
 

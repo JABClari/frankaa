@@ -231,6 +231,13 @@ unfurl({ photos, effect: "wipe" });
 - Buttons press to scale .97. Hover and fades use `cubic-bezier(.23, 1, .32, 1)`.
 - Reduced motion: no spring, no effect, a short fade; finger tracking stays, since the person is making that motion.
 
+## Phones
+
+- The page behind is pinned while the lightbox is open (iOS Safari ignores `overflow: hidden` for this), and comes back to the same scroll position on close.
+- The overlay is `100dvh` and re-fits, with a spring, when the visual viewport changes as Safari's toolbars show or hide.
+- The counter, close button, arrows and caption sit inside the safe areas. Use `viewport-fit=cover` in your viewport meta to let it use the full screen.
+- On phones the previous and next buttons sit in the bottom corners, beside the caption, within thumb reach.
+
 ## Security, CSP and CORS
 
 - No `eval`, no `new Function`, no `innerHTML`. Captions and labels go in with `textContent`, and icons are built node by node, so it works under a strict Content Security Policy, including Trusted Types.
@@ -274,6 +281,7 @@ npm run build      # dist/ and docs/lib/, with a size report
 npm test           # node --test, needs Node 22.18 or later
 npm run typecheck
 npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
+npm run check:touch # phone check: real touch swipes, button taps, scroll lock (Chromium and WebKit)
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.
