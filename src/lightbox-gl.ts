@@ -1,8 +1,9 @@
 // The WebGL renderer, on one full-screen canvas:
 // - at rest, while springing and while swiping, each photo is drawn straight from its texture into a rounded box
 //   (one cheap pass); a sideways swipe draws the neighbours beside it, like a strip of photos;
-// - only while an effect runs (a key or button move) does the effect shader draw the two photos into an offscreen
-//   texture first, which is then drawn into the box.
+// - only while an effect runs (a key or button move, or a swipe, where the finger drives the effect's progress)
+//   does the effect shader draw the two photos into an offscreen texture first, which is then drawn into the box.
+//   A swipe falls back to the strip past the first or last photo, for videos, and with swipe: "strip".
 // Photos are decoded off the main thread (img.decode()) before they are uploaded, and only the current photo and
 // its neighbours are uploaded, one at a time when the browser is idle. Raw WebGL1, no package.
 import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
@@ -181,6 +182,16 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
 
   const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, plain: false, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
   const strip = { x: 0, v: 0, held: false };
+  // A swipe that drives the effect: p runs 0 to pitch() px as the finger moves toward photo j (dir 1 next, -1
+  // previous); on release it springs to goal (pitch: j becomes current, 0: back) with the finger's velocity.
+  const scrub = { on: false, held: false, j: 0, dir: 1 as 1 | -1, p: 0, v: 0, goal: 0 };
+  const lerpBox = (a: Box, b: Box, t: number): Box => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t });
+  // Finish a swipe at once (a button move, a close or a new drag arrived mid-spring).
+  const endScrub = () => {
+    if (!scrub.on) return;
+    if (!scrub.held && scrub.goal > 0) { st.a = st.b = scrub.j; st.target = fitFor(scrub.j); st.box = { ...st.target }; st.vel = [0, 0, 0, 0]; }
+    scrub.on = false; scrub.held = false; scrub.p = 0; scrub.v = 0;
+  };
   let raf = 0, last = 0, dead = false, held = false;
   let waiters: (() => void)[] = [];
   const swapMs = ctx.still ? FADE_MS : ctx.duration;
@@ -205,12 +216,49 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
   };
   const shift = (b: Box, dx: number): Box => ({ x: b.x + dx, y: b.y, w: b.w, h: b.h });
 
+  // The effect shader draws photos a then b at progress mix offscreen, and the result goes into the box.
+  const effectPass = (a: WebGLTexture, b: WebGLTexture, ia: number, ib: number, mix: number, dir: number, box: Box, radius: R4) => {
+    const bw = Math.max(1, Math.min(W, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(H, Math.round(box.h * dpr)));
+    bind(fx);
+    g.bindFramebuffer(g.FRAMEBUFFER, fbo);
+    g.viewport(0, 0, bw, bh);
+    g.disable(g.BLEND);
+    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, a);
+    g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, b);
+    g.uniform1i(F.uFrom, 0); g.uniform1i(F.uTo, 1);
+    g.uniform1f(F.uProgress, mix);
+    g.uniform2f(F.uResolution, bw, bh);
+    const da = dims[ia] ?? dims[ib] ?? [1, 1], db = dims[ib] ?? da;
+    g.uniform2f(F.uFromSize, da[0], da[1]); g.uniform2f(F.uToSize, db[0], db[1]);
+    g.uniform1f(F.uTime, (performance.now() - t0) / 1000);
+    g.uniform1f(F.uDirection, dir);
+    for (const [k, v] of Object.entries(effect.uniforms ?? {})) {
+      const kind = uniformKind(v), loc = F[k];
+      if (!kind || !loc) continue;
+      if (kind === "1f") g.uniform1f(loc, v as number);
+      else if (kind === "2fv") g.uniform2fv(loc, v as number[]);
+      else if (kind === "3fv") g.uniform3fv(loc, v as number[]);
+      else g.uniform4fv(loc, v as number[]);
+    }
+    g.drawArrays(g.TRIANGLES, 0, 6);
+    g.bindFramebuffer(g.FRAMEBUFFER, null);
+    g.viewport(0, 0, W, H);
+    g.enable(g.BLEND);
+    drawBox(target!, box, [1, 1], [bw / W, bh / H], radius, st.alpha);
+  };
+
   const draw = () => {
     g.bindFramebuffer(g.FRAMEBUFFER, null);
     g.viewport(0, 0, W, H);
     g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
     g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
     const radius = radiusAt(st.closing, st.box, st.target, ctx.rSpot(st.b), ctx.rOpen);
+    // A swipe driving the effect: from the current photo toward j, the box easing between their shapes.
+    if (scrub.on && tex[st.b] && tex[scrub.j]) {
+      const t = Math.min(1, Math.max(0, scrub.p / pitch()));
+      effectPass(tex[st.b]!, tex[scrub.j]!, st.b, scrub.j, t, scrub.dir, lerpBox(st.box, fitFor(scrub.j), t), ctx.rOpen);
+      return;
+    }
     // The neighbours, while the strip is off centre.
     if (strip.held || Math.abs(strip.x) > 0.5) {
       const { prev, next } = neighbours(st.b, srcs.length, ctx.loop);
@@ -233,33 +281,7 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       return;
     }
     // An effect is running: draw it offscreen, then into the box.
-    const bw = Math.max(1, Math.min(W, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(H, Math.round(box.h * dpr)));
-    bind(fx);
-    g.bindFramebuffer(g.FRAMEBUFFER, fbo);
-    g.viewport(0, 0, bw, bh);
-    g.disable(g.BLEND);
-    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, a);
-    g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, b);
-    g.uniform1i(F.uFrom, 0); g.uniform1i(F.uTo, 1);
-    g.uniform1f(F.uProgress, st.mix);
-    g.uniform2f(F.uResolution, bw, bh);
-    const da = dims[st.a] ?? dims[st.b] ?? [1, 1], db = dims[st.b] ?? da;
-    g.uniform2f(F.uFromSize, da[0], da[1]); g.uniform2f(F.uToSize, db[0], db[1]);
-    g.uniform1f(F.uTime, (performance.now() - t0) / 1000);
-    g.uniform1f(F.uDirection, st.dir);
-    for (const [k, v] of Object.entries(effect.uniforms ?? {})) {
-      const kind = uniformKind(v), loc = F[k];
-      if (!kind || !loc) continue;
-      if (kind === "1f") g.uniform1f(loc, v as number);
-      else if (kind === "2fv") g.uniform2fv(loc, v as number[]);
-      else if (kind === "3fv") g.uniform3fv(loc, v as number[]);
-      else g.uniform4fv(loc, v as number[]);
-    }
-    g.drawArrays(g.TRIANGLES, 0, 6);
-    g.bindFramebuffer(g.FRAMEBUFFER, null);
-    g.viewport(0, 0, W, H);
-    g.enable(g.BLEND);
-    drawBox(target!, box, [1, 1], [bw / W, bh / H], radius, st.alpha);
+    effectPass(a, b, st.a, st.b, st.mix, st.dir, box, radius);
   };
 
   // One rAF loop draws the spring, the strip, the effect and any fade. Waiters resolve when it comes to rest.
@@ -272,6 +294,17 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     if (held) moving = true;
     else if (ctx.still) st.box = { ...st.target };
     else moving = stepBox(st.box, st.vel, st.target, dt, st.closing ? SPRING_CLOSE : SPRING_OPEN);
+    if (scrub.on) {
+      if (scrub.held) moving = true;
+      else if (ctx.still) { scrub.p = scrub.goal; endScrub(); }
+      else {
+        let e: number;
+        [e, scrub.v] = stripStep(scrub.p - scrub.goal, scrub.v, dt);
+        scrub.p = Math.min(pitch(), Math.max(0, scrub.goal + e));
+        if (scrub.p === 0 || scrub.p === pitch()) if (Math.sign(scrub.v) === Math.sign(scrub.p - pitch() / 2)) scrub.v = 0;
+        if (Math.abs(scrub.p - scrub.goal) < 0.25 && Math.abs(scrub.v) < 2) endScrub(); else moving = true;
+      }
+    }
     if (strip.held) moving = true;
     else if (strip.x !== 0 || strip.v !== 0) {
       if (ctx.still) { strip.x = 0; strip.v = 0; }
@@ -322,6 +355,7 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
         return true;
       },
       async show(i, dir, plain) {
+        endScrub();
         st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = performance.now(); st.plain = !!plain;
         const p = run();
         if (!(await ready(i)) || dead) return false;
@@ -332,6 +366,7 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       },
       async close(to) {
         held = false; strip.held = false;
+        endScrub();
         st.closing = true;
         if (ctx.still || !to) {
           st.fadeAt = performance.now(); st.fadeOut = true;
@@ -355,12 +390,38 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
         st.vel = [v.vx, v.vy, 0, 0];
         void run();
       },
-      pan(x) {
+      pan(x, plain) {
         if (dead) return;
+        // The effect follows the finger when there is a photo that way, loaded, and no video; else the strip.
+        if (scrub.on && !scrub.held) endScrub();
+        const nb = neighbours(st.b, srcs.length, ctx.loop);
+        const j = x < 0 ? nb.next : x > 0 ? nb.prev : null;
+        if (ctx.swipeFx && !ctx.still && !plain && j !== null && tex[j] && tex[st.b] && strip.x === 0 && !strip.held) {
+          st.a = st.b; st.swapAt = 0; st.mix = 0;
+          scrub.on = true; scrub.held = true; scrub.j = j; scrub.dir = x < 0 ? 1 : -1; scrub.p = Math.min(pitch(), Math.abs(x)); scrub.v = 0;
+          if (!raf) raf = requestAnimationFrame(frame);
+          return;
+        }
+        if (scrub.on && x === 0) { scrub.p = 0; if (!raf) raf = requestAnimationFrame(frame); return; }
+        if (scrub.on) { scrub.on = false; scrub.held = false; scrub.p = 0; }
         strip.held = true; strip.x = x; strip.v = 0;
         if (!raf) raf = requestAnimationFrame(frame);
       },
       async settle(dir, vx) {
+        if (scrub.on) {
+          scrub.held = false;
+          // A fling against the drag picks the photo on the other side: the effect starts toward it from 0.
+          if (dir !== 0 && dir !== scrub.dir) {
+            const nb = neighbours(st.b, srcs.length, ctx.loop);
+            const j = dir > 0 ? nb.next : nb.prev;
+            if (j !== null && tex[j]) { scrub.j = j; scrub.dir = dir; scrub.p = 0; } else dir = 0;
+          }
+          scrub.goal = dir !== 0 ? pitch() : 0;
+          scrub.v = -vx * scrub.dir;
+          await run();
+          if (dir !== 0) prefetch(st.b);
+          return;
+        }
         strip.held = false;
         strip.v = vx;
         if (dir !== 0) {

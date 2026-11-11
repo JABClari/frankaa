@@ -192,6 +192,7 @@ Returns `{ index, renderer, el, go(i, smooth?), next(), prev(), expand(i?), imag
 | `loop` | `boolean` | `false` | Wrap from the last photo to the first. Off: the ends rubber-band and the arrow there is marked unavailable |
 | `effect` | `string \| Effect` | `"displacement"` | `"displacement"`, `"ripple"`, `"fade"`, `"zoom"`, `"none"`, a registered name, or your own shader |
 | `renderer` | `"auto" \| "webgl" \| "css"` | `"auto"` | Auto uses WebGL where it is there, else CSS. CSS never touches WebGL |
+| `swipe` | `"effect" \| "strip"` | `"effect"` | With WebGL, a sideways swipe runs the effect under the finger (its progress follows the drag, then finishes or rewinds on release). `"strip"` slides the photos side by side. CSS always slides |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: a short fade, no spring, no effect |
 | `label` | `string` | `"Photos"` | Shorthand for `labels.dialog` |
 | `labels` | `Partial<UnfurlLabels>` | English | Every string, for translation (below) |
