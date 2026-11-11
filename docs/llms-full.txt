@@ -60,7 +60,9 @@ Keyboard: the track is one tab stop. Left and Right step, Home and End jump, Ent
 Opens immediately and returns controls. It closes itself on Escape, the close button, a tap outside the controls, or a pull down.
 
 Options (all optional except photos):
-photos        (UnfurlPhoto | string)[]   UnfurlPhoto = { src, alt?, caption? }. Use full-size sources.
+photos        (UnfurlItem | string)[]    images { src, alt?, caption? } and videos { type: "video", provider, src, poster, alt?, caption?, title? }, mixed. Full-size sources.
+topActions    { label, onClick(api), icon? }[]   extra top-bar buttons before Close, inside the focus trap; icon = 24px path d
+controls      (host, api) => void | cleanup   mount your own controls in the top bar (before Close)
 start         number               photo to open on. Default 0
 origin        (i) => Element | DOMRect | null   where photo i sits on the page now. It springs from there and back. Null or off screen: it fades.
 effect        "displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | Effect object. Default "displacement"
@@ -84,6 +86,8 @@ Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ in
        onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback: "css" | "none", message? })
 
 Returns: { index, renderer: "webgl" | "css", next(), prev(), show(i), close(), destroy() }
+api (for actions and controls): { index, item, close(), next(), prev(), show(i) }
+destroy() while open fires onCloseStart and onCloseEnd with reason "destroy", and ends running animations with cancelled: true.
 
 ====================================================================
 4. EVENTS
@@ -272,6 +276,46 @@ Shader contract:
 - Reduced motion replaces every effect with a fade.
 - Effect object: { fragment, uniforms?, duration? (ms, default 480), easing? ("ease-out" default | "ease-in-out" | "linear" | (t) => number), css? ("fade" | "slide" | "zoom" | "none") }.
 - Shaders run on the GPU with no network or DOM access. Only use shaders you trust; never compile user-supplied shader source.
+
+--- 5.11 Videos mixed with photos ---
+
+unfurl({
+  photos: [
+    { src: "/img/a.jpg", alt: "Terrace" },
+    { type: "video", provider: "youtube", src: "https://youtu.be/dQw4w9WgXcQ", poster: "/img/walk.jpg", title: "Pool walk" },
+    { type: "video", provider: "vimeo", src: "https://vimeo.com/76979871", poster: "/img/v.jpg" },
+    { type: "video", provider: "tiktok", src: "https://www.tiktok.com/@you/video/7212345678901234567", poster: "/img/tt.jpg" },
+    { type: "video", provider: "instagram", src: "https://www.instagram.com/reel/C1a2B3c4D5e/", poster: "/img/ig.jpg" },
+    { type: "video", provider: "mp4", src: "/media/tour.mp4", poster: "/img/tour.jpg" },
+  ],
+  origin: (n) => thumbs[n], // the poster springs from the grid
+});
+// Players load only on tap: youtube-nocookie, Vimeo dnt=1, official TikTok and Instagram embeds, <video> for mp4.
+// They are removed (stopped) when moving on or closing. Changes to or from a video use a short crossfade.
+// CSP: frame-src for the providers used, media-src for mp4 hosts. Bad sources fire onError reason "media".
+
+--- 5.12 Extra top-bar buttons ---
+
+unfurl({
+  photos,
+  topActions: [
+    { label: "Remove this page", onClick: (api) => removePage(api.index) },
+    { label: "Share", icon: "M4 12v7h16v-7M12 3v12M7 8l5-5 5 5", onClick: (api) => share(api.item) },
+  ],
+});
+// Or mount anything: controls: (host, api) => { host.append(myButton); return () => cleanUp(); }
+
+--- 5.13 React controls in the top bar ---
+
+const lightbox = useUnfurl(photos, {
+  renderControls: (api) => <button type="button" className="fk-unfurl-action" onClick={() => removePage(api.index)}>Remove this page</button>,
+});
+return <>{grid}{lightbox.portal}</>; // portal keeps your React context; needs react-dom
+
+--- 5.14 Tidy up on destroy ---
+
+const lb = unfurl({ photos, onCloseEnd: ({ reason }) => setOpen(false) }); // reason "close" or "destroy"
+lb.destroy(); // e.g. on route change: still fires onCloseStart and onCloseEnd
 
 ====================================================================
 6. RULES OF THUMB

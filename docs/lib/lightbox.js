@@ -1,1 +1,1 @@
-import{a,b,c,d,e,f}from"./chunks/chunk-57X22EI3.js";import"./chunks/chunk-RKQ7TKWN.js";export{e as UNFURL_LABELS,d as checkEffect,b as effectNames,a as registerEffect,c as supported,f as unfurl};
+import{a,b,c,d,e,f,g}from"./chunks/chunk-2PIN4LFC.js";import"./chunks/chunk-RKQ7TKWN.js";export{f as UNFURL_LABELS,d as checkEffect,b as effectNames,e as embedUrl,a as registerEffect,c as supported,g as unfurl};

@@ -11,6 +11,9 @@ alwaysApply: false
 - Pass `origin` (thumbnail element) and match `radius` to the thumbnail. From a slider: `origin: (n) => slider.image(n)`, `onChange: (n) => slider.go(n, false)`.
 - `renderer: "auto"` by default; `"css"` for cross-origin photos without CORS headers.
 - Photos always have `alt`; slider keeps an aspect ratio; pass `width`/`height`.
+- Videos: `{ type: "video", provider, src, poster }` items (YouTube, Vimeo, TikTok, Instagram, mp4); CSP `frame-src`.
+- Extra buttons: `topActions` / `controls` / React `renderControls` + `{lightbox.portal}`; never DOM-inject.
+- `destroy()` fires close hooks with `reason: "destroy"`.
 - Autoplay off and `reducedMotion: "system"` unless asked. Translate with `labels`.
 - Custom shaders: GLSL ES 1.0 with `precision mediump float;`, `vUv`, `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`; write `gl_FragColor`; use `coverUv()`/`mirrorUv()`. `registerEffect` + `checkEffect`. Errors fall back to CSS via `onError`. Never compile user-supplied shaders.
 - Verify: keyboard, focus trap and return, reduced motion fade, no layout shift, no `frankaa:error`.

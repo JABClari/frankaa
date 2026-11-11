@@ -14,7 +14,7 @@ await build({
   format: "esm",
   target: "es2020",
   minify: true,
-  external: ["react"],
+  external: ["react", "react-dom"],
   chunkNames: "chunks/[name]-[hash]",
   legalComments: "none",
   plugins: [{

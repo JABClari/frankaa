@@ -41,6 +41,7 @@ void main() {
 }`;
 
 const FADE_MS = 160;
+const PLAIN_MS = 260;
 
 /** True when this browser can draw the lightbox with WebGL. */
 export function supported(): boolean {
@@ -171,7 +172,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
   const ease = easingFn(effect.easing);
   const t0 = performance.now();
 
-  const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
+  const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, plain: false, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
   const strip = { x: 0, v: 0, held: false };
   let raf = 0, last = 0, dead = false, held = false;
   let waiters: (() => void)[] = [];
@@ -217,6 +218,12 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     if (!a || !b) return;
     const box = shift(st.box, strip.x);
     if (!st.swapAt) { drawBox(b, box, coverAsp(st.b, box), [1, 1], radius, st.alpha); return; }
+    // A plain crossfade (a video is involved): the old photo, then the new one over it, no effect pass.
+    if (st.plain) {
+      drawBox(a, box, coverAsp(st.a, box), [1, 1], radius, st.alpha);
+      drawBox(b, box, coverAsp(st.b, box), [1, 1], radius, st.alpha * st.mix);
+      return;
+    }
     // An effect is running: draw it offscreen, then into the box.
     const bw = Math.max(1, Math.min(W, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(H, Math.round(box.h * dpr)));
     bind(fx);
@@ -266,7 +273,8 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
       }
     }
     if (st.swapAt) {
-      const t = swapMs > 0 ? (now - st.swapAt) / swapMs : 1;
+      const ms = st.plain ? Math.min(PLAIN_MS, swapMs || PLAIN_MS) : swapMs;
+      const t = ms > 0 ? (now - st.swapAt) / ms : 1;
       st.mix = ease(Math.min(1, t));
       if (t >= 1) { st.a = st.b; st.mix = 0; st.swapAt = 0; } else moving = true;
     }
@@ -305,8 +313,8 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         prefetch(i);
         return true;
       },
-      async show(i, dir) {
-        st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = performance.now();
+      async show(i, dir, plain) {
+        st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = performance.now(); st.plain = !!plain;
         const p = run();
         if (!(await ready(i)) || dead) return false;
         st.target = fitFor(i);
@@ -361,6 +369,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         await run();
         if (dir !== 0) prefetch(st.b);
       },
+      rect() { return dims[st.b] ? fitFor(st.b) : null; },
       resize() { resizeCanvas(); area = ctx.area(); st.target = fitFor(st.b); void run(); },
       destroy() {
         dead = true;

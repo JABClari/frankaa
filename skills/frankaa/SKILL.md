@@ -24,6 +24,9 @@ frankaa is a zero-dependency photo slider (`procession`) and lightbox (`unfurl`)
 - `renderer: "auto"` (default). Use `"css"` for cross-origin photos without CORS headers, or when WebGL is unwanted.
 - Effects: `"displacement"` (default), `"ripple"`, `"fade"`, `"zoom"`, `"none"`, or a custom shader.
 - Custom shader: GLSL ES 1.0 fragment with `precision mediump float;`, `vUv`, `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`, own uniforms; output `gl_FragColor`; macros `coverUv()` and `mirrorUv()`. Register with `registerEffect(name, { fragment, uniforms })`, check with `checkEffect()`. Compile errors fire `onError` and fall back to CSS. Never compile shader source from users.
+- Videos: items `{ type: "video", provider: "youtube" | "vimeo" | "tiktok" | "instagram" | "mp4", src, poster }`; players load on tap; add providers to CSP `frame-src`.
+- Extra top-bar buttons: `topActions` or `controls`; React `renderControls` and render `{lightbox.portal}`. Never inject into the dialog by DOM query.
+- `destroy()` fires the close hooks with `reason: "destroy"`.
 - Autoplay off, `reducedMotion: "system"`, unless the person asks.
 - Translate with `labels` (`{n}` and `{total}` placeholders).
 - Listen with hooks (`onOpenStart`, `onOpenEnd`, `onCloseStart`, `onCloseEnd`, `onChange`, `onSlideChange`, `onAnimationStart`, `onAnimationEnd`, `onError`) or DOM events `frankaa:<kebab-name>`.

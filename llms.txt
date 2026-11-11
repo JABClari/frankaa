@@ -16,7 +16,7 @@ Install: `npm install frankaa`. Import the CSS once: `import "frankaa/style.css"
 - `frankaa`: everything below
 - `frankaa/slider`: `procession(element, options)`
 - `frankaa/lightbox`: `unfurl(options)`, `supported()`, `registerEffect(name, effect)`, `checkEffect(effect)`, `effectNames()`
-- `frankaa/react`: `<Procession ref photos ... />`, `useUnfurl(photos, options)` returning `{ open(i), close() }`
+- `frankaa/react`: `<Procession ref photos ... />`, `useUnfurl(photos, options)` returning `{ open(i), close(), portal }` (options.renderControls(api) renders into the top bar through `portal`)
 - `frankaa/style.css`
 
 ## Slider options
@@ -25,11 +25,11 @@ photos (required), label, labels, start, dots, arrows, snap ("mandatory" | "prox
 
 ## Lightbox options
 
-photos (required, { src, alt?, caption? } or string), start, origin ((i) => Element | DOMRect | null), effect ("displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | { fragment, uniforms?, duration?, easing?, css? }), renderer ("auto" | "webgl" | "css"), reducedMotion, label, labels, focusTrap (true), returnFocus (true | HTMLElement | false), announce (true), hideOrigin (true), radius (16), openRadius (12), container, loop (false). Returns { index, renderer, next(), prev(), show(i), close(), destroy() }. Swipes slide a photo strip with the neighbours peeking in; keys and buttons use the effect.
+photos (required: images { src, alt?, caption? } or string, and videos { type: "video", provider: "youtube" | "vimeo" | "tiktok" | "instagram" | "mp4", src, poster, title? }), topActions ([{ label, onClick(api), icon? }]), controls ((host, api) => cleanup), start, origin ((i) => Element | DOMRect | null), effect ("displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | { fragment, uniforms?, duration?, easing?, css? }), renderer ("auto" | "webgl" | "css"), reducedMotion, label, labels, focusTrap (true), returnFocus (true | HTMLElement | false), announce (true), hideOrigin (true), radius (16), openRadius (12), container, loop (false). Returns { index, renderer, next(), prev(), show(i), close(), destroy() }. Swipes slide a photo strip with the neighbours peeking in; keys and buttons use the effect.
 
 ## Hooks (also DOM CustomEvents "frankaa:<kebab-name>", bubbling)
 
-onOpenStart, onOpenEnd, onCloseStart, onCloseEnd, onChange(index, detail), onSlideChange(index, detail) (slider), onAnimationStart({ type }), onAnimationEnd({ type }), onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback, message? }), onSelect(index, img) (slider).
+onOpenStart, onOpenEnd, onCloseStart({ index, reason: "close" | "destroy" }), onCloseEnd (destroy() fires both), onChange(index, detail), onSlideChange(index, detail) (slider), onAnimationStart({ type }), onAnimationEnd({ type }), onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback, message? }), onSelect(index, img) (slider).
 
 ## Custom shader contract
 

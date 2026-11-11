@@ -160,7 +160,8 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
       prefetch(i);
       return true;
     },
-    async show(i, dir) {
+    rect() { return cur ? { ...cur.rest } : null; },
+    async show(i, dir, plain) {
       const t = ++token;
       const l = await layer(i);
       if (dead) return true;
@@ -181,7 +182,7 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
         paint(l, sp.box, ctx.rOpen, 0);
         await Promise.all([fade(l.frame, [{ opacity: 0 }, { opacity: 1 }], ms), fade(old.frame, [{ opacity: 1 }, { opacity: 0 }], ms), run()]);
       } else {
-        const kind = ctx.still ? "fade" : transition;
+        const kind = ctx.still || plain ? "fade" : transition;
         if (kind !== "none" && ms > 0 && old && old !== l) {
           const x = `${dir * 4}%`;
           const inFrom = kind === "slide" ? `translate3d(${x}, 0, 0)` : kind === "zoom" ? "scale(1.04)" : "none";

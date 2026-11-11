@@ -1,8 +1,9 @@
 // Thin React bindings. The core does the work; these only mount it, keep the latest callbacks, and clean up.
 // Safe to import during server rendering: nothing touches the DOM until an effect runs.
-import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, type CSSProperties } from "react";
+import { createElement, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { procession, type Procession as Slider, type ProcessionOptions } from "./slider";
-import { unfurl, type Unfurl, type UnfurlOptions } from "./lightbox";
+import { unfurl, type Unfurl, type UnfurlApi, type UnfurlOptions } from "./lightbox";
 
 export type ProcessionProps = ProcessionOptions & { className?: string; style?: CSSProperties };
 export type ProcessionHandle = Slider;
@@ -45,27 +46,39 @@ export const Procession = forwardRef<ProcessionHandle | null, ProcessionProps>(f
   return createElement("div", { ref: root, className: props.className, style: props.style });
 });
 
+export type UseUnfurlOptions = Omit<UnfurlOptions, "photos" | "start" | "controls"> & {
+  /** Your own controls in the top bar (before Close, inside the focus trap). Render `lightbox.portal` anywhere in
+   *  your tree for them to appear; they keep your React context. */
+  renderControls?: (api: UnfurlApi) => ReactNode;
+};
+
 /**
  * The lightbox as a hook: `const lightbox = useUnfurl(photos, { origin })`, then `lightbox.open(i)`.
  * Options are read when it opens; hooks (onChange, onCloseEnd, ...) always see the latest props.
- * It closes on unmount.
+ * With renderControls, render `{lightbox.portal}` somewhere in your component. It closes on unmount (firing
+ * onCloseStart and onCloseEnd with reason "destroy").
  */
-export function useUnfurl(photos: UnfurlOptions["photos"], options: Omit<UnfurlOptions, "photos" | "start"> = {}) {
+export function useUnfurl(photos: UnfurlOptions["photos"], options: UseUnfurlOptions = {}) {
   const inst = useRef<Unfurl | null>(null);
-  const latest = useRef({ photos, ...options } as UnfurlOptions);
+  const latest = useRef({ photos, ...options } as UnfurlOptions & UseUnfurlOptions);
   latest.current = { photos, ...options };
+  const [slot, setSlot] = useState<{ host: HTMLElement; api: UnfurlApi; index: number } | null>(null);
   useEffect(() => () => { inst.current?.destroy(); inst.current = null; }, []);
   const open = useCallback((start = 0) => {
     inst.current?.destroy();
-    const o = latest.current;
-    const hooks = latestHooks(latest, ["onOpenStart", "onOpenEnd", "onCloseStart", "onChange", "onAnimationStart", "onAnimationEnd", "onError"]);
+    const { renderControls, ...o } = latest.current;
+    const hooks = latestHooks(latest, ["onOpenStart", "onOpenEnd", "onCloseStart", "onAnimationStart", "onAnimationEnd", "onError"]);
     inst.current = unfurl({
       ...o, ...hooks, start,
+      controls: renderControls ? (host, api) => { setSlot({ host, api, index: api.index }); return () => setSlot(null); } : undefined,
+      onChange: (i, d) => { setSlot((s) => (s ? { ...s, index: i } : s)); latest.current.onChange?.(i, d); },
       onCloseEnd: (d) => { inst.current = null; latest.current.onCloseEnd?.(d); },
     });
   }, []);
   const close = useCallback(() => inst.current?.close(), []);
-  return { open, close, get current() { return inst.current; } };
+  const render = latest.current.renderControls;
+  const portal = slot && render ? createPortal(render(slot.api), slot.host) : null;
+  return { open, close, portal, get current() { return inst.current; } };
 }
 
 export { procession, unfurl };

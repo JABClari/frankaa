@@ -104,8 +104,11 @@ export type Stage = {
   kind: "webgl" | "css";
   /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
   open(i: number, from: Box | null, started?: () => void): Promise<boolean>;
-  /** Move to photo i. Resolves false when it cannot be shown. */
-  show(i: number, dir: 1 | -1): Promise<boolean>;
+  /** Move to photo i. plain: a short crossfade instead of the effect (used when a video is involved). Resolves
+   *  false when it cannot be shown. */
+  show(i: number, dir: 1 | -1, plain?: boolean): Promise<boolean>;
+  /** Where the current photo rests when open (for laying a video player over it). */
+  rect(): Box | null;
   /** Spring back to `to` (or fade out). */
   close(to: Box | null): Promise<void>;
   /** While a finger is down: draw the photo at its open box moved by x, y and scaled by s, 1:1, no spring. */
