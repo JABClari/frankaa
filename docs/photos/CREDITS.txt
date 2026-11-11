@@ -1,0 +1,14 @@
+Photos used on the frankaa docs page. Each is CC0 1.0 at its source (found through Openverse). Resized copies: <name>.jpg is 1600 px wide, <name>-800.jpg is 800 px wide.
+
+h01.jpg | Resort Leisure | Matt Moloney | cc0 1.0 | https://stocksnap.io/photo/resort-leisure-9IRWVX4JZL
+h03.jpg | Exotic Maldives pool resort | unknown | cc0 1.0 | https://www.rawpixel.com/image/6040802/photo-image-public-domain-blue-ocean
+h04.jpg | Seaside resort pool at evening | Gustavo Galati | cc0 1.0 | https://wordpress.org/photos/photo/34682723ad/
+h10.jpg | Mauritius beach side resort pool | unknown | cc0 1.0 | https://www.rawpixel.com/image/6034601/photo-image-public-domain-tree-nature
+h11.jpg | Hotel terrace sea | unknown | cc0 1.0 | https://www.rawpixel.com/image/6042263/photo-image-public-domain-nature-tropical
+h16.jpg | Modern Room | World Travel Adventures | cc0 1.0 | https://stocksnap.io/photo/modern-room-ORRHZ1VULX
+h17.jpg | Free bedroom image | unknown | cc0 1.0 | https://www.rawpixel.com/image/5908337/photo-image-public-domain-minimal-room
+h18.jpg | Luxury bathroom interior | unknown | cc0 1.0 | https://www.rawpixel.com/image/6043330/photo-image-public-domain-living-room
+h21.jpg | Luxury resort outdoor spa | unknown | cc0 1.0 | https://www.rawpixel.com/image/6017670/photo-image-public-domain-beach-room
+h23.jpg | Luxury resort lobby | unknown | cc0 1.0 | https://www.rawpixel.com/image/6042791/photo-image-public-domain-wood-house
+h30.jpg | Furniture Patio | World Travel Adventures | cc0 1.0 | https://stocksnap.io/photo/furniture-patio-KOIAWLY3SU
+h38.jpg | Tropical pool vacation | unknown | cc0 1.0 | https://www.rawpixel.com/image/6033371/photo-image-public-domain-tropical-free

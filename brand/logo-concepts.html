@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>frankaa logo</title>
+<style>
+:root{--red:#C8322B;--gold:#E9B23A;--indigo:#23306B;--green:#1F6B4A;--cream:#F4EBDD;--ink:#16130F}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:400 15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:48px 20px 80px}
+h1{font-size:28px;margin:0 0 6px;letter-spacing:-.4px}.say{color:#6b6257;margin:0 0 36px}
+.c{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 0 28px;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.c > div{padding:36px 28px;display:flex;align-items:center;gap:18px;min-height:190px}
+.light{background:var(--cream)}.dark{background:var(--ink);color:var(--cream)}
+.word{font:700 44px/1 "Avenir Next","Futura","Helvetica Neue",Arial,sans-serif;letter-spacing:-1px}
+.meta{display:flex;justify-content:space-between;align-items:baseline;margin:8px 2px 30px}
+.meta b{font-size:15px}.meta span{color:#6b6257;font-size:13.5px}
+.sizes{display:flex;gap:14px;align-items:center;margin-left:auto}
+.sizes svg{display:block}
+@media (max-width:760px){.c{grid-template-columns:1fr}.word{font-size:34px}}
+</style></head><body><main>
+<h1>frankaa</h1>
+<p class="say">Say it FRAN-kah. Named after the Fante Asafo flags (frankaa): bold pictures in cut cloth, carried one after another. The slider is the procession; the lightbox is the unfurl.</p>
+
+<svg width="0" height="0" style="position:absolute">
+ <defs>
+  <!-- 1 Unfurl: a flag on a pole, cut-cloth fly edge, appliqué sun and frame -->
+  <symbol id="m1" viewBox="0 0 64 64"><rect x="10" y="6" width="5" height="54" rx="2.5" fill="currentColor"/><path d="M15 9h38l-6 11 6 11H15z" fill="#C8322B"/><circle cx="29" cy="20" r="6" fill="#E9B23A"/><rect x="38" y="15" width="7" height="10" rx="1.5" fill="#F4EBDD"/></symbol>
+  <!-- 2 Procession: three flags in a row, the front one larger -->
+  <symbol id="m2" viewBox="0 0 64 64"><g><rect x="6" y="22" width="3" height="30" rx="1.5" fill="currentColor"/><path d="M9 24h12l-3 5 3 5H9z" fill="#23306B"/></g><g><rect x="20" y="16" width="3.5" height="36" rx="1.75" fill="currentColor"/><path d="M23.5 18h15l-4 6 4 6h-15z" fill="#E9B23A"/></g><g><rect x="36" y="8" width="4.5" height="46" rx="2.25" fill="currentColor"/><path d="M40.5 10h18l-5 8.5 5 8.5h-18z" fill="#C8322B"/><circle cx="48" cy="18.5" r="3.6" fill="#F4EBDD"/></g></symbol>
+  <!-- 3 Letter f: the pole is the stem, the flag is the crossbar -->
+  <symbol id="m3" viewBox="0 0 64 64"><path d="M22 58V20c0-8 5-13 13-13h6v8h-5c-3 0-5 2-5 5v38z" fill="currentColor"/><path d="M31 24h24l-5 8 5 8H31z" fill="#C8322B"/><rect x="36" y="28" width="9" height="8" rx="1.5" fill="#E9B23A"/></symbol>
+  <!-- 4 Cut-cloth tile: a square banner with appliqué shapes, a frame being shown -->
+  <symbol id="m4" viewBox="0 0 64 64"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></symbol>
+ </defs>
+</svg>
+
+<script>
+const concepts=[
+ ["m1","1. Unfurl","A flag on a pole with a cut-cloth edge, an appliqué sun and a frame. The lightbox opening to full view."],
+ ["m2","2. Procession","Three flags in a row, growing toward the front. The slider moving through photos, one leading."],
+ ["m3","3. Letter f","The pole is the stem of the f, the flag is its crossbar. Reads as a letter at small sizes."],
+ ["m4","4. Cut-cloth banner","A square banner with a zig-zag cut hem and an appliqué picture inside: a gallery frame in cloth."],
+];
+const main=document.querySelector("main");
+for(const [id,title,why] of concepts){
+ const meta=document.createElement("div");meta.className="meta";meta.innerHTML=`<b>${title}</b><span>${why}</span>`;
+ const c=document.createElement("div");c.className="c";
+ const sizes=(col)=>`<div class="sizes">${[48,32,16].map(s=>`<svg width="${s}" height="${s}" style="color:${col}"><use href="#${id}"/></svg>`).join("")}</div>`;
+ c.innerHTML=`<div class="light"><svg width="84" height="84" style="color:#16130F"><use href="#${id}"/></svg><span class="word">frankaa</span>${sizes("#16130F")}</div><div class="dark"><svg width="84" height="84" style="color:#F4EBDD"><use href="#${id}"/></svg><span class="word">frankaa</span>${sizes("#F4EBDD")}</div>`;
+ main.append(meta,c);
+}
+</script>
+</main></body></html>

@@ -1,0 +1,66 @@
+{
+  "name": "frankaa",
+  "version": "0.1.0",
+  "description": "A photo slider that follows the finger and a WebGL lightbox that springs from its spot. Framework-free TypeScript, zero dependencies, thin React bindings.",
+  "license": "MIT",
+  "author": "Joshua, Sirius Arc",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./slider": {
+      "types": "./dist/slider.d.ts",
+      "import": "./dist/slider.js"
+    },
+    "./lightbox": {
+      "types": "./dist/lightbox.d.ts",
+      "import": "./dist/lightbox.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "slider",
+    "carousel",
+    "scroll-snap",
+    "lightbox",
+    "webgl",
+    "gallery",
+    "photos",
+    "react"
+  ],
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
