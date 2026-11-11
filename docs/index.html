@@ -43,8 +43,11 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px
 .brand { display: inline-flex; align-items: center; gap: 9px; font: 700 17px/1 var(--display); letter-spacing: -.02em; text-decoration: none; }
 .links { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
 .links::-webkit-scrollbar { display: none; }
-.links a { padding: 7px 10px; border-radius: 8px; color: var(--ink-2); font-size: 13.5px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color .2s var(--ease), background-color .2s var(--ease); }
-.links a:hover { color: var(--ink); background: var(--well); }
+.links { position: relative; }
+.links .spy { position: absolute; left: 0; top: 50%; height: 30px; margin-top: -15px; width: 0; border-radius: 999px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-2); opacity: 0; pointer-events: none; transition: transform .35s var(--ease), width .35s var(--ease), opacity .2s var(--ease); }
+.links a { position: relative; z-index: 1; padding: 7px 10px; border-radius: 8px; color: var(--ink-2); font-size: 13.5px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: color .2s var(--ease), background-color .2s var(--ease); }
+.links a:hover { color: var(--ink); }
+.links a[aria-current="true"] { color: var(--ink); }
 .nav-end { display: flex; gap: 8px; }
 
 /* ---------- Hero ---------- */
@@ -58,10 +61,35 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px
 .install { display: inline-flex; align-items: center; gap: 10px; height: 44px; margin-top: 26px; padding: 0 6px 0 16px; border-radius: 999px; background: var(--card); box-shadow: 0 0 0 1px var(--line), var(--shadow); font: 500 14px/1 var(--mono); }
 .install span { color: var(--ink-3); }
 
-/* ---------- Story ---------- */
-.story { display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: center; max-width: 760px; margin: 28px auto 0; padding: 20px 22px; border-radius: 20px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
-.story p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
-.story b { color: var(--ink); font-weight: 600; }
+/* ---------- The name, and its story ---------- */
+.word { position: relative; padding: 0 0 14px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease); }
+.word:active { transform: scale(.98); }
+.wave { position: absolute; left: 4%; right: 4%; bottom: 0; width: 92%; height: 10px; overflow: visible; }
+.wave path { fill: none; stroke: var(--gold); stroke-width: 2.4; stroke-linecap: round; vector-effect: non-scaling-stroke; animation: wave 2.4s linear infinite; }
+.word:hover .wave path, .word:focus-visible .wave path { stroke: var(--red); }
+@keyframes wave { to { transform: translateX(-30px); } }
+.wave { clip-path: inset(-4px 0 -4px 0); }
+dialog.story { width: min(440px, calc(100vw - 32px)); margin: auto; padding: 0; border: 0; border-radius: 22px; background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px var(--line), 0 24px 64px -16px rgba(22, 19, 15, .35); }
+dialog.story::backdrop { background: rgba(22, 19, 15, .38); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+dialog.story[open] { animation: story-in .28s var(--ease); }
+dialog.story[open]::backdrop { animation: fade-in .2s var(--ease); }
+dialog.story.closing { animation: story-out .16s var(--ease) forwards; }
+@keyframes story-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes story-out { to { opacity: 0; transform: translateY(6px) scale(.98); } }
+@keyframes fade-in { from { opacity: 0; } }
+.story-in { position: relative; padding: 26px 26px 24px; }
+.story-in h2 { font: 700 30px/1 var(--display); letter-spacing: -.03em; margin: 12px 0 4px; }
+.story-in p { margin: 12px 0 0; color: var(--ink-2); font-size: 15px; }
+.story-in p.say { margin-top: 2px; color: var(--ink-3); }
+.story-in b { color: var(--ink); font-weight: 600; }
+.story-close { position: absolute; top: 14px; right: 14px; }
+@media (max-width: 720px) {
+  dialog.story { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 22px 22px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  dialog.story[open] { animation: sheet-in .32s var(--ease); }
+  dialog.story.closing { animation: sheet-out .18s var(--ease) forwards; }
+  @keyframes sheet-in { from { transform: translateY(100%); } }
+  @keyframes sheet-out { to { transform: translateY(100%); } }
+}
 
 /* ---------- Sections ---------- */
 section.part { padding: 88px 0 0; }
@@ -95,7 +123,7 @@ pre[hidden] { display: none; }
 pre .c { color: var(--ink-3); }
 
 /* Slider demo */
-.cards3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 18px; }
+.cards3 { display: grid; grid-template-columns: minmax(0, 380px); justify-content: center; gap: 16px; padding: 28px 18px; }
 .cards3 .t { margin: 10px 2px 0; font-weight: 600; font-size: 14px; }
 .cards3 .s { margin: 0 2px; color: var(--ink-3); font-size: 13px; }
 
@@ -106,6 +134,8 @@ pre .c { color: var(--ink-3); }
 .tile img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 14px; transition: transform .3s var(--ease); }
 @media (hover: hover) and (pointer: fine) { .tile:hover img { transform: scale(1.025); } }
 .tile:active { transform: scale(.97); }
+.tile, .mini-grid button { position: relative; }
+.tile.video::after, .mini-grid button.video::after { content: ""; position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 999px; background: rgba(255, 255, 255, .92) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7v10l8-5z' fill='%2316130f'/%3E%3C/svg%3E") center / 20px no-repeat; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); pointer-events: none; }
 
 /* Drumline demo */
 .drum-well { padding: 26px 0 22px; }
@@ -204,36 +234,44 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
   .console li { grid-template-columns: 112px minmax(0, 1fr); } .console li .tm { display: none; }
 }
 @media (max-width: 520px) { .fx .meta { flex-direction: column; align-items: flex-start; } .head h2 { font-size: 23px; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) { .wave path { animation: none; } .links .spy { transition: opacity .2s; } *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 </style>
 </head>
 <body>
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="frankaa home"><svg width="24" height="24" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>frankaa</a>
-    <nav class="links" aria-label="Sections"><a href="#procession">Slider</a><a href="#unfurl">Lightbox</a><a href="#drumline">Drumline</a><a href="#together">Together</a><a href="#effects">Effects</a><a href="#play">Playground</a><a href="#ai">AI</a></nav>
+    <nav class="links" aria-label="Sections"><span class="spy" aria-hidden="true"></span><a href="#procession">Slider</a><a href="#unfurl">Lightbox</a><a href="#drumline">Drumline</a><a href="#together">Together</a><a href="#effects">Effects</a><a href="#play">Playground</a><a href="#ai">AI</a></nav>
     <div class="nav-end"><a class="btn small" href="https://www.npmjs.com/package/frankaa">npm</a><a class="btn small dark" href="https://github.com/JABClari/frankaa">GitHub</a></div>
   </div>
 </header>
+<dialog class="story" id="story" aria-labelledby="story-title">
+  <div class="story-in">
+    <button class="btn small story-close" type="button" id="story-close" aria-label="Close">Close</button>
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
+    <h2 id="story-title">frankaa</h2>
+    <p class="say">said FRAN-kah</p>
+    <p>Along the Fante coast of Ghana, each Asafo company has its <b>frankaa</b>: flags of bold appliqué, pictures cut from coloured cloth and sewn onto a field.</p>
+    <p>At festivals they are carried one after another in procession, then unfurled so the whole picture can be seen, while the drums keep time.</p>
+    <p>The parts are named after them: <b>procession</b>, the slider; <b>unfurl</b>, the lightbox; and <b>drumline</b> (dondo, the talking drum), the strip.</p>
+  </div>
+</dialog>
 <main id="top">
   <div class="wrap">
     <section class="hero" aria-labelledby="h-title">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
-      <h1 id="h-title">frankaa</h1>
+      <h1 id="h-title"><button class="word" type="button" id="story-open" aria-haspopup="dialog" aria-label="frankaa: read where the name comes from">frankaa<svg class="wave" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true"><path d="M0 4 Q 7.5 0 15 4 T 30 4 T 45 4 T 60 4 T 75 4 T 90 4 T 105 4 T 120 4 T 135 4 T 150 4"/></svg></button></h1>
       <p class="say">said FRAN-kah</p>
       <p class="lede">Pictures that move like the real thing.</p>
       <ul class="points"><li class="pill">A slider</li><li class="pill">A lightbox</li><li class="pill">A strip with a ruler</li><li class="pill">Zero dependencies</li><li class="pill">React</li></ul>
       <div class="install"><span>$</span> npm install frankaa <button class="btn small copy" type="button" data-copy="npm install frankaa" aria-label="Copy the install command"><span class="go">Copy</span><span class="ok">Copied</span></button></div>
-      <div class="story">
-        <svg width="56" height="56" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
-        <p>Along the Fante coast of Ghana, each Asafo company has its <b>frankaa</b>: flags of bold appliqué, pictures cut from cloth and sewn onto a field, carried one after another in procession and unfurled so the whole picture can be seen. The parts are named after them: <b>procession</b>, <b>unfurl</b> and <b>drumline</b> (dondo, the talking drum).</p>
-      </div>
+
     </section>
 
     <!-- ---------- procession ---------- -->
     <section class="part" id="procession" aria-labelledby="h-procession">
       <div class="head"><div><h2 id="h-procession"><small>procession</small>The slider</h2><p>A native scroll-snap track: the swipe is the browser's own, 1:1 with momentum. Photos past the first load as it comes near.</p></div></div>
-      <div class="card"><div class="well"><div class="cards3" id="cards"></div></div><div class="meta"><div><b>Cards that open the lightbox</b><span>Swipe, scroll or use the arrow keys. Click a photo to open it.</span></div></div></div>
+      <div class="card"><div class="well"><div class="cards3" id="cards"></div></div><div class="meta"><div><b>A card that opens the lightbox</b><span>Swipe, scroll or use the arrow keys. Click a photo to open it.</span></div></div></div>
       <div class="code" data-tabs><div class="code-bar" role="tablist"><button class="tab" role="tab" aria-selected="true">Any page</button><button class="tab" role="tab" aria-selected="false">React</button><button class="btn small copy" type="button" aria-label="Copy the code"><span class="go">Copy</span><span class="ok">Copied</span></button></div>
 <pre><code>import { procession, unfurl } from "frankaa";
 import "frankaa/style.css";
@@ -349,7 +387,7 @@ drumline(el, items, { lightbox: { effect: "ripple", strip: "minimal" } });  // a
 <footer>
   <div class="wrap">
     <div class="credit"><svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>Sirius Arc, built by Joshua. MIT licence.</div>
-    <details><summary>Photo credits (all CC0)</summary><ol id="credits"></ol></details>
+    <details><summary>Photo and video credits</summary><ol id="credits"></ol><p>Videos: <a href="https://mixkit.co/free-stock-video/luxury-swimming-pool-4045/">Luxury swimming pool</a>, Mixkit, Mixkit Free License; <a href="https://peach.blender.org/">Big Buck Bunny</a>, Blender Foundation, CC BY 3.0, played from YouTube's privacy player.</p></details>
   </div>
 </footer>
 
@@ -372,7 +410,11 @@ const P = {
   h38: ["Tropical pool vacation", "", "https://www.rawpixel.com/image/6033371/photo-image-public-domain-tropical-free"],
 };
 const item = (id) => ({ src: `photos/${id}-800.jpg`, srcset: `photos/${id}-800.jpg 800w, photos/${id}.jpg 1600w`, sizes: "(max-width: 720px) 100vw, 360px", full: `photos/${id}.jpg`, thumb: `photos/${id}-800.jpg`, alt: P[id][0], caption: `${P[id][0]}. Photo: ${P[id][1] ? P[id][1] + ", " : ""}CC0`, width: 800, height: 600 });
-const items = (ids) => ids.map(item);
+// Two videos, so the demos show video slides too: an mp4 (Mixkit) and a YouTube embed (Big Buck Bunny, CC BY).
+const MP4 = { type: "video", provider: "mp4", src: "media/luxury-pool.mp4", poster: "media/luxury-pool-poster.jpg", thumb: "media/luxury-pool-thumb.jpg", alt: "Luxury swimming pool, a video", caption: "Luxury swimming pool. Video: Mixkit", title: "Luxury swimming pool" };
+const YT = { type: "video", provider: "youtube", src: "https://youtu.be/aqz-KE-bpKQ", poster: "media/bbb-poster.jpg", thumb: "media/bbb-thumb.jpg", alt: "Big Buck Bunny, a video", caption: "Big Buck Bunny. Blender Foundation, CC BY 3.0", title: "Big Buck Bunny" };
+const items = (ids) => ids.map((x) => (typeof x === "string" ? item(x) : x));
+const nameOf = (x) => (typeof x === "string" ? P[x][0] : x.title);
 const $ = (s) => document.querySelector(s);
 
 // ---------- Custom shaders: cloth unfurl and mosaic ----------
@@ -449,7 +491,7 @@ $("#pg-clear").addEventListener("click", () => { log.replaceChildren(); });
 
 // ---------- procession ----------
 const sliders = [];
-[["Sea terrace", "Four photos", ["h11", "h04", "h16", "h18"]], ["Pool house", "Four photos", ["h03", "h10", "h17", "h21"]], ["Garden lobby", "Four photos", ["h23", "h30", "h38", "h01"]]].forEach(([title, sub, ids], k) => {
+[["Sea terrace", "Four photos and a video", ["h11", "h04", MP4, "h16", "h18"]]].forEach(([title, sub, ids], k) => {
   const art = document.createElement("article"), box = document.createElement("div");
   const t = Object.assign(document.createElement("p"), { className: "t", textContent: title });
   const s = Object.assign(document.createElement("p"), { className: "s", textContent: sub });
@@ -464,8 +506,9 @@ const remakeSliders = () => sliders.forEach((s) => { s.inst.destroy(); s.inst = 
 const grid = (host, ids, radius) => {
   const list = items(ids);
   const tiles = ids.map((id, i) => {
-    const b = document.createElement("button"); b.type = "button"; b.className = "tile"; b.setAttribute("aria-label", `Open photo ${i + 1}: ${P[id][0]}`);
-    const img = document.createElement("img"); Object.assign(img, { src: `photos/${id}-800.jpg`, alt: "", loading: "lazy", decoding: "async", width: 800, height: 600 });
+    const video = typeof id !== "string";
+    const b = document.createElement("button"); b.type = "button"; b.className = video ? "tile video" : "tile"; b.setAttribute("aria-label", `Open ${video ? "video" : "photo"} ${i + 1}: ${nameOf(id)}`);
+    const img = document.createElement("img"); Object.assign(img, { src: video ? id.thumb : `photos/${id}-800.jpg`, alt: "", loading: "lazy", decoding: "async", width: 800, height: 600 });
     b.append(img);
     b.addEventListener("click", () => lb(list, i, (n) => tiles[n].querySelector("img"), { label: "Gallery", radius }));
     host.append(b);
@@ -473,11 +516,11 @@ const grid = (host, ids, radius) => {
   });
   return tiles;
 };
-grid($("#gallery"), ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", "h17"], 14);
-const tryTiles = grid($("#try"), ["h11", "h03", "h23", "h18"], 12);
+grid($("#gallery"), ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", MP4], 14);
+const tryTiles = grid($("#try"), ["h11", "h03", "h23", MP4], 12);
 
 // ---------- drumline ----------
-const DRUM = items([...Object.keys(P), ...Object.keys(P)]);
+const DRUM = items([...Object.keys(P).slice(0, 6), MP4, ...Object.keys(P).slice(6), YT, ...Object.keys(P)]);
 let drum = null, D = { preset: "ruler", fluid: "", colorFocus: null };
 const makeDrum = () => {
   drum?.destroy();
@@ -500,10 +543,11 @@ const comboList = items(["h21", "h11", "h04", "h16", "h23", "h38"]);
 const cs = procession($("#combo-slider"), comboList, { label: "Spa", zoomCursor: true, onSelect: (i) => lb(comboList, i, (n) => cs.image(n), { radius: 12, onChange: (n) => cs.go(n, false) }) });
 let stripPreset = "ruler";
 segs("#strip-preset", (v) => { stripPreset = v; });
-const stripList = items(["h10", "h03", "h38", "h01", "h04", "h30", "h17", "h18", "h21"]);
+const stripList = items(["h10", "h03", YT, "h38", "h01", "h04", MP4, "h30", "h17"]);
 const stripThumbs = stripList.map((it, i) => {
   const b = document.createElement("button"); b.type = "button"; b.setAttribute("aria-label", `Open photo ${i + 1} with the filmstrip`);
   const img = document.createElement("img"); img.src = it.thumb; img.alt = ""; b.append(img);
+  if (it.type === "video") b.classList.add("video");
   b.addEventListener("click", () => lb(stripList, i, (n) => stripThumbs[n], { radius: 10, strip: stripPreset }));
   $("#combo-strip").append(b);
   return img;
@@ -559,6 +603,44 @@ for (const b of document.querySelectorAll(".copy")) b.addEventListener("click", 
   try { await navigator.clipboard.writeText(text); } catch { return; }
   b.classList.add("done"); setTimeout(() => b.classList.remove("done"), 1400);
 });
+
+// ---------- The name: a small dialog with its story (native <dialog>: focus stays inside, Esc closes) ----------
+const story = $("#story");
+const closeStory = () => {
+  if (!story.open || story.classList.contains("closing")) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { story.close(); return; }
+  story.classList.add("closing");
+  story.addEventListener("animationend", () => { story.classList.remove("closing"); story.close(); }, { once: true });
+};
+$("#story-open").addEventListener("click", () => { story.showModal(); $("#story-close").focus(); });
+$("#story-close").addEventListener("click", closeStory);
+story.addEventListener("cancel", (e) => { e.preventDefault(); closeStory(); });
+story.addEventListener("click", (e) => { if (e.target === story) closeStory(); });
+
+// ---------- Scroll-spy: the nav marks the section in view, with a pill that slides between items ----------
+const nav = document.querySelector(".links"), pill = nav.querySelector(".spy");
+const navLinks = [...nav.querySelectorAll("a")];
+const place = (a) => {
+  navLinks.forEach((x) => (x === a ? x.setAttribute("aria-current", "true") : x.removeAttribute("aria-current")));
+  if (!a) { pill.style.opacity = "0"; return; }
+  pill.style.width = `${a.offsetWidth}px`;
+  pill.style.transform = `translateX(${a.offsetLeft}px)`;
+  pill.style.opacity = "1";
+  // On a phone the nav scrolls sideways: bring the active item into view.
+  if (nav.scrollWidth > nav.clientWidth) {
+    const left = a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2;
+    nav.scrollTo({ left, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+};
+const seen = new Map();
+const spy = new IntersectionObserver((entries) => {
+  for (const e of entries) seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+  let best = null, top = -1;
+  for (const a of navLinks) { const r = seen.get(a.hash.slice(1)) ?? 0; if (r > top && r > 0) { top = r; best = a; } }
+  place(best);
+}, { rootMargin: "-64px 0px -45% 0px", threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
+for (const a of navLinks) { const sec = document.getElementById(a.hash.slice(1)); if (sec) spy.observe(sec); }
+addEventListener("resize", () => place(navLinks.find((a) => a.getAttribute("aria-current") === "true") || null));
 
 // ---------- credits ----------
 for (const [id, [t, by, url]] of Object.entries(P)) {
