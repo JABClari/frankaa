@@ -12,9 +12,10 @@ export function containBox(aspect: number, area: Box): Box {
 }
 
 /** Where the open photo may sit: the viewport less room for the controls (more on a wide screen). */
-export function stageBox(vw: number, vh: number): Box {
+export function stageBox(vw: number, vh: number, strip = false): Box {
   const wide = vw >= 720;
-  const side = wide ? 88 : 12, top = wide ? 72 : 64, bottom = wide ? 88 : 96;
+  // With a filmstrip the room below the photo only holds the caption (the strip has its own band).
+  const side = wide ? 88 : 12, top = wide ? 72 : 64, bottom = wide ? (strip ? 48 : 88) : 96;
   return { x: side, y: top, w: Math.max(1, vw - side * 2), h: Math.max(1, vh - top - bottom) };
 }
 

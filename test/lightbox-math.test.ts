@@ -17,6 +17,8 @@ test("containBox falls back to 3:2 for a bad aspect", () => {
 test("stageBox leaves more room for controls on a wide screen", () => {
   assert.deepEqual(stageBox(1440, 900), { x: 88, y: 72, w: 1264, h: 740 });
   assert.deepEqual(stageBox(375, 812), { x: 12, y: 64, w: 351, h: 652 });
+  // With a filmstrip, a wide screen keeps only the caption's room under the photo.
+  assert.deepEqual(stageBox(1440, 900, true), { x: 88, y: 72, w: 1264, h: 780 });
 });
 
 for (const [name, cfg] of [["open", SPRING_OPEN], ["close", SPRING_CLOSE]] as const) {

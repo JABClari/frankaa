@@ -4,7 +4,11 @@
 // fragment shader draws rounded corners, cover-fits the picture, and fades colour and light away from the focus.
 // Raw WebGL1, no package. The caller falls back to the DOM bend when this returns null or reports it is slow.
 
+import { uploadPhoto } from "./gl-fit";
+
 const COLS = 16;
+// Cards are small: a picture is uploaded at 1024 px on its longest side at most (gl-fit.ts).
+const maxSide = 1024;
 
 const VERT = `attribute vec2 p;
 uniform vec4 box;     // x, y, w, h in CSS px (already scaled for focus)
@@ -108,7 +112,7 @@ export function createBend(canvas: HTMLCanvasElement, srcs: string[], onFail: (i
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
       g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-      try { g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, img); } catch { g.deleteTexture(t); onFail(i); return; }
+      if (!uploadPhoto(g, img, maxSide)) { g.deleteTexture(t); onFail(i); return; }
       tex[i] = t; dims[i] = [img.naturalWidth, Math.max(1, img.naturalHeight)];
       onReady(i);
     }, () => { if (!dead) onFail(i); });

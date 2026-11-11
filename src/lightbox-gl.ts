@@ -8,6 +8,7 @@
 // its neighbours are uploaded, one at a time when the browser is idle. Raw WebGL1, no package.
 import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
 import { PRELUDE, easingFn, uniformKind, type Effect } from "./effects";
+import { maxTextureSide, uploadPhoto } from "./gl-fit";
 
 const EFFECT_VERT = `attribute vec2 p;
 varying vec2 vUv;
@@ -119,6 +120,8 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     return t;
   };
 
+  const maxSide = maxTextureSide(g);
+
   // Photos load with crossOrigin="anonymous": a cross-origin photo without CORS headers fails to load (it never
   // taints the canvas), and the lightbox then switches to the CSS renderer and reports it. Each is decoded off the
   // main thread before the upload, so the upload does not stall a frame with a JPEG decode.
@@ -137,7 +140,8 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
           if (dead) { resolve(false); return; }
           const t = texture();
           g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-          try { g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, img); } catch { g.deleteTexture(t); resolve(false); return; }
+          // Big originals are drawn down to the screen's size first (gl-fit.ts); a refused upload falls back to CSS.
+          if (!uploadPhoto(g, img, maxSide)) { g.deleteTexture(t); resolve(false); return; }
           tex[i] = t; dims[i] = [img.naturalWidth, Math.max(1, img.naturalHeight)];
           resolve(true);
         };
