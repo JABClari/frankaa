@@ -277,7 +277,8 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     const a = tex[st.a] ?? tex[st.b], b = tex[st.b] ?? tex[st.a];
     if (!a || !b) return;
     const box = shift(st.box, strip.x);
-    if (!st.swapAt) { drawBox(b, box, coverAsp(st.b, box), [1, 1], radius, st.alpha); return; }
+    // At rest, or while the next photo is still loading (then the current one stays, with its own shape).
+    if (!st.swapAt) { const k = tex[st.b] ? st.b : st.a; drawBox(b, box, coverAsp(k, box), [1, 1], radius, st.alpha); return; }
     // A plain crossfade (a video is involved): the old photo, then the new one over it, no effect pass.
     if (st.plain) {
       drawBox(a, box, coverAsp(st.a, box), [1, 1], radius, st.alpha);
@@ -360,9 +361,13 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       },
       async show(i, dir, plain) {
         endScrub();
-        st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = performance.now(); st.plain = !!plain;
+        // The effect's clock starts once photo i is on the GPU: a photo still loading would otherwise use up the
+        // effect while it waits, and only its last moments would show. Until then the current photo stays.
+        st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = 0; st.plain = !!plain;
         const p = run();
         if (!(await ready(i)) || dead) return false;
+        if (st.b !== i) return true;
+        st.swapAt = performance.now();
         st.target = fitFor(i);
         await Promise.all([p, run()]);
         prefetch(i);
