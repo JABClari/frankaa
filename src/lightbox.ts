@@ -11,7 +11,7 @@ import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion
 import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
 import { embedUrl, type MediaProvider } from "./media";
 import type { Drumline, DrumlineOptions } from "./drumline";
-import { stripOptions, type DrumlinePreset } from "./drumline-math";
+import { drumlineLook, stripOptions, type DrumlinePreset } from "./drumline-math";
 import { readArgs, fullSrc, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
 
 export { supported, checkEffect, registerEffect, effectNames };
@@ -207,7 +207,12 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   // The filmstrip (drumline), when asked for: it sits along the bottom; the photo makes room for it.
   const stripOpts = stripOptions(options.strip) as Omit<DrumlineOptions, "items" | "photos"> | null;
   const stripHost = stripOpts ? el("div", "fk-unfurl-strip") : null;
-  if (stripHost) { root.append(stripHost); root.dataset.strip = "true"; }
+  if (stripHost) {
+    root.append(stripHost); root.dataset.strip = "true";
+    // The band is as tall as the look needs: pictures alone are short; a ruler or numbers need the full band.
+    const look = drumlineLook(stripOpts!);
+    root.dataset.stripSize = !look.ticks && !look.numbers ? "short" : "full";
+  }
   let filmstrip: Drumline | null = null;
   let stripTimer = 0;
 
@@ -276,7 +281,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       const w = r.width || window.innerWidth, h = r.height || window.visualViewport?.height || window.innerHeight;
       const sh = stripHost ? stripHost.offsetHeight : 0;
       if (stripHost) root.style.setProperty("--fk-strip-h", `${sh}px`);
-      const b = stageBox(w - pl - pr, h - pt - pb - sh);
+      const b = stageBox(w - pl - pr, h - pt - pb - sh, !!stripHost);
       return { x: b.x + pl, y: b.y + pt, w: b.w, h: b.h };
     },
   };

@@ -166,6 +166,8 @@
 
 /* ---------- the lightbox's filmstrip (unfurl strip option) ---------- */
 .fk-unfurl-strip { position: absolute; left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); height: var(--fk-strip-size, 150px); z-index: 1; color: #fff; transition: opacity .16s var(--fk-ease); }
+.fk-unfurl[data-strip-size="short"] { --fk-strip-size: 84px; }
+.fk-unfurl[data-strip-size="full"] { --fk-strip-size: 142px; }
 .fk-unfurl-strip.fk-drumline { --fk-dl-w: 36px; --fk-dl-h: 56px; --fk-dl-gap: 8px; --fk-dl-card-radius: 8px; gap: 6px; }
 .fk-unfurl-strip.fk-drumline.fk-dl-bars { --fk-dl-w: 20px; --fk-dl-h: 64px; --fk-dl-gap: 6px; --fk-dl-card-radius: 2px; }
 .fk-unfurl-strip .fk-dl-card { background: rgba(255, 255, 255, .08); }
