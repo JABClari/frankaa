@@ -106,7 +106,7 @@ export function pickRenderer(pref: RendererPref | undefined, webgl: boolean): "w
 }
 
 /** What both renderers share with the lightbox. */
-export type StageCtx = { still: boolean; rSpot: (i: number) => R4; rOpen: R4; duration: number; area: () => Box; count: number; loop: boolean };
+export type StageCtx = { still: boolean; swipeFx?: boolean; rSpot: (i: number) => R4; rOpen: R4; duration: number; area: () => Box; count: number; loop: boolean };
 export type Stage = {
   kind: "webgl" | "css";
   /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
@@ -128,8 +128,10 @@ export type Stage = {
   track(o: { x: number; y: number; s: number }): void;
   /** The finger lifted: hand the photo to the spring, seeded with the release velocity (px/s). */
   release(v: { vx: number; vy: number }): void;
-  /** While a finger drags sideways: the strip of photos sits x px off centre, the neighbours peeking in. */
-  pan(x: number): void;
+  /** While a finger drags sideways: the strip of photos sits x px off centre, the neighbours peeking in. With
+   *  WebGL and swipeFx the effect runs toward the neighbour instead, x px of pitch as its progress; plain (a
+   *  video is involved) keeps the strip. */
+  pan(x: number, plain?: boolean): void;
   /** The finger lifted after a sideways drag: dir 1 or -1 makes the next or previous photo current, 0 stays; the
    *  strip springs home carrying the release velocity vx (px/s). */
   settle(dir: -1 | 0 | 1, vx: number): Promise<void>;

@@ -1,4 +1,4 @@
-import{A as lt,B as st,C as dt,D as ut,E as ee,F as mt,G as ct,I as _e,c as nt,e as rt,f as ot,q as it,y as Z,z as at}from"./chunk-VYZGMFOE.js";import{c as qe,f as Ke,g as je,h as Ce,i as Je,m as Qe,o as y,v as Ze,w as et,x as tt}from"./chunk-CH3KES5G.js";var Tt=`attribute vec2 p;
+import{A as lt,B as st,C as dt,D as ut,E as ee,F as mt,G as ct,I as _e,c as nt,e as rt,f as ot,q as it,y as Z,z as at}from"./chunk-IGVTZO3D.js";import{c as qe,f as Ke,g as je,h as Ce,i as Je,m as Qe,o as y,v as Ze,w as et,x as tt}from"./chunk-CH3KES5G.js";var Tt=`attribute vec2 p;
 uniform vec4 box;     // x, y, w, h in CSS px (already scaled for focus)
 uniform vec2 view;    // canvas size in CSS px
 uniform float amt;    // bulge: 0 flat, about 0.2 at a fast fling

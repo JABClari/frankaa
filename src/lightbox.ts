@@ -96,6 +96,9 @@ export type UnfurlOptions = UnfurlHooks & {
   effect?: EffectName | (string & {}) | Effect;
   /** "auto" (default) uses WebGL where it is there, else CSS. "css" never touches WebGL. */
   renderer?: RendererPref;
+  /** What a sideways swipe does with WebGL: "effect" (default) runs the effect under the finger, its progress
+   *  following the drag; "strip" slides the photos side by side. The CSS renderer always slides. */
+  swipe?: "effect" | "strip";
   /** "system" (default) follows the person's setting; "always" and "never" override it. */
   reducedMotion?: ReducedMotion;
   /** Keep Tab inside the dialog. Default true. */
@@ -263,7 +266,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const ctx: StageCtx = {
     still,
     rSpot: (i: number) => toR4(typeof options.radius === "function" ? options.radius(i) : options.radius, 16),
-    rOpen: toR4(options.openRadius, 12), duration: effect.duration ?? 480, count: n, loop,
+    rOpen: toR4(options.openRadius, 12), duration: effect.duration ?? 480, count: n, loop, swipeFx: options.swipe !== "strip",
     // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
     // areas, which the overlay carries as padding.
     area: () => {
@@ -648,7 +651,8 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       d.px = open ? dx : Math.sign(dx) * rubber(Math.abs(dx), stripWidth() * 0.25);
       root.dataset.swiping = "true";
       hideMedia();
-      stage.pan(d.px);
+      const toward = dx < 0 ? nb.next : nb.prev;
+      stage.pan(d.px, isVideo(photos[index]) || (toward !== null && isVideo(photos[toward])));
     } else {
       const p = pull(dy);
       hideMedia();

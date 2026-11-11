@@ -49,6 +49,19 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px
 .links a:hover { color: var(--ink); }
 .links a[aria-current="true"] { color: var(--ink); }
 .nav-end { display: flex; gap: 8px; }
+.nav .wrap { position: relative; }
+.gh { display: none; }
+.jump, .jump-menu { display: none; }
+.jump { align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 12px; margin-left: auto; border: 0; border-radius: 999px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink); font: 500 13px/1 var(--sans); cursor: pointer; transition: transform .16s var(--ease), background-color .2s var(--ease); -webkit-tap-highlight-color: transparent; }
+.jump:active { transform: scale(.97); }
+.jump svg { color: var(--ink-3); transition: transform .25s var(--ease); }
+.jump[aria-expanded="true"] svg { transform: rotate(180deg); }
+.jump-now { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jump-menu { position: absolute; top: calc(100% + 6px); right: 16px; left: 16px; padding: 6px; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px var(--line), 0 12px 32px -8px rgba(22, 19, 15, .18), 0 2px 6px rgba(22, 19, 15, .06); transform-origin: top right; opacity: 0; transform: translateY(-4px) scale(.98); transition: opacity .18s var(--ease), transform .22s var(--ease); }
+.jump-menu.on { opacity: 1; transform: none; }
+.jump-menu a { display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 10px; color: var(--ink-2); font-size: 15px; font-weight: 500; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.jump-menu a:active { background: var(--well); }
+.jump-menu a[aria-current="true"] { color: var(--ink); background: var(--well); }
 
 /* ---------- Hero ---------- */
 .hero { text-align: center; padding: 64px 0 30px; }
@@ -56,7 +69,19 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px
 .hero:hover svg.mark { transform: rotate(-4deg) translateY(-2px); }
 .hero h1 { font: 700 50px/1 var(--display); letter-spacing: -.035em; margin: 10px 0 4px; }
 .say { color: var(--ink-3); font-size: 15px; margin: 0; }
-.lede { text-wrap: balance; font: 500 21px/1.25 var(--sans); letter-spacing: -.02em; max-width: 22ch; margin: 20px auto 0; }
+.lede { text-wrap: balance; font: 500 21px/1.25 var(--sans); letter-spacing: -.02em; max-width: 26ch; margin: 20px auto 0; }
+.lede-2 { text-wrap: balance; color: var(--ink-2); font: 400 15px/1.45 var(--sans); max-width: 40ch; margin: 8px auto 0; }
+.ask { position: relative; display: flex; justify-content: center; margin-top: 10px; }
+.ask-btn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--ink-3); font: 400 12.5px/1 var(--sans); letter-spacing: .01em; cursor: pointer; transition: color .2s var(--ease), background-color .2s var(--ease); -webkit-tap-highlight-color: transparent; }
+.ask-btn:hover, .ask-btn[aria-expanded="true"] { color: var(--ink); }
+.ask-btn svg { transition: transform .25s var(--ease); }
+.ask-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.ask-menu { position: absolute; z-index: 5; top: calc(100% + 4px); left: 50%; width: 220px; margin-left: -110px; padding: 6px; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px var(--line), 0 12px 32px -8px rgba(22, 19, 15, .18), 0 2px 6px rgba(22, 19, 15, .06); text-align: left; transform-origin: top center; opacity: 0; transform: translateY(-4px) scale(.98); transition: opacity .18s var(--ease), transform .22s var(--ease); }
+.ask-menu:not([hidden]) { display: block; }
+.ask-menu.on { opacity: 1; transform: none; }
+.ask-menu a, .ask-menu button { display: flex; align-items: center; width: 100%; height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: none; color: var(--ink); font: 500 14px/1 var(--sans); text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ask-menu a:hover, .ask-menu button:hover, .ask-menu a:active, .ask-menu button:active { background: var(--well); }
+.ask-menu .ok { display: none; } .ask-menu .done .ok { display: inline; } .ask-menu .done .go { display: none; }
 .points { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 17px 0 0; padding: 0; list-style: none; }
 .install { display: inline-flex; align-items: center; gap: 10px; height: 40px; margin-top: 20px; padding: 0 6px 0 16px; border-radius: 999px; background: var(--card); box-shadow: 0 0 0 1px var(--line), var(--shadow); font: 500 14px/1 var(--mono); }
 .install span { color: var(--ink-3); }
@@ -219,8 +244,19 @@ footer details summary { cursor: pointer; width: max-content; }
 footer ol { margin: 8px 0 0; padding-left: 18px; }
 
 @media (max-width: 1000px) { .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid3, .cards3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* The section links stop fitting below 800px: one button names the section in view and opens the list. */
+@media (max-width: 800px) {
+  .nav .wrap { gap: 10px; }
+  .links { display: none; }
+  .jump { display: inline-flex; order: 2; }
+  .jump-menu:not([hidden]) { display: block; }
+  .nav-end { order: 3; }
+  .gh-btn { width: 32px; height: 32px; padding: 0; }
+  .gh-btn span { display: none; }
+  .gh { display: block; }
+}
 @media (max-width: 720px) {
-  .hero { padding: 36px 0 18px; } .hero h1 { font-size: 38px; } .hero svg.mark { width: 46px; height: 46px; } .lede { font-size: 17px; margin-top: 16px; } .points { margin-top: 13px; } .install { margin-top: 16px; }
+  .hero { padding: 36px 0 18px; } .hero h1 { font-size: 38px; } .hero svg.mark { width: 46px; height: 46px; } .lede { font-size: 17px; margin-top: 16px; } .lede-2 { font-size: 14px; } .points { margin-top: 13px; } .install { margin-top: 16px; }
   .grid2, .grid3, .cards3 { grid-template-columns: minmax(0, 1fr); }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
   .cards3 { padding: 12px; }
@@ -242,7 +278,9 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
   <div class="wrap">
     <a class="brand" href="#top" aria-label="frankaa home"><svg width="24" height="24" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>frankaa</a>
     <nav class="links" aria-label="Sections"><span class="spy" aria-hidden="true"></span><a href="#procession">Slider</a><a href="#unfurl">Lightbox</a><a href="#drumline">Drumline</a><a href="#together">Together</a><a href="#effects">Effects</a><a href="#play">Playground</a><a href="#ai">AI</a></nav>
-    <div class="nav-end"><a class="btn small" href="https://www.npmjs.com/package/frankaa">npm</a><a class="btn small dark" href="https://github.com/JABClari/frankaa">GitHub</a></div>
+    <div class="nav-end"><a class="btn small" href="https://www.npmjs.com/package/frankaa">npm</a><a class="btn small dark gh-btn" href="https://github.com/JABClari/frankaa" aria-label="frankaa on GitHub"><svg class="gh" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a></div>
+    <button class="jump" type="button" aria-expanded="false" aria-controls="jump-menu"><span class="jump-now">Sections</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="jump-menu" id="jump-menu" hidden></div>
   </div>
 </header>
 <dialog class="story" id="story" aria-labelledby="story-title">
@@ -262,9 +300,12 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
       <h1 id="h-title"><button class="word" type="button" id="story-open" aria-haspopup="dialog" aria-label="frankaa: read where the name comes from">frankaa<svg class="wave" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true"><path d="M0 4 Q 7.5 0 15 4 T 30 4 T 45 4 T 60 4 T 75 4 T 90 4 T 105 4 T 120 4 T 135 4 T 150 4"/></svg></button></h1>
       <p class="say">said FRAN-kah</p>
-      <p class="lede">Pictures that move like the real thing.</p>
+      <p class="lede">An image gallery library that makes pictures move like the real thing.</p>
+      <p class="lede-2">Use it for your sliders, image grids, galleries and more.</p>
       <ul class="points"><li class="pill">A slider</li><li class="pill">A lightbox</li><li class="pill">A strip with a ruler</li><li class="pill">Zero dependencies</li><li class="pill">React</li></ul>
       <div class="install"><span>$</span> npm install frankaa <button class="btn small copy" type="button" data-copy="npm install frankaa" aria-label="Copy the install command"><span class="go">Copy</span><span class="ok">Copied</span></button></div>
+      <div class="ask"><button class="ask-btn" type="button" aria-expanded="false" aria-controls="ask-menu">Ask AI<svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="ask-menu" id="ask-menu" hidden><a id="ask-chatgpt" href="https://chatgpt.com/" target="_blank" rel="noopener">Open in ChatGPT</a><a id="ask-claude" href="https://claude.ai/new" target="_blank" rel="noopener">Open in Claude</a><button type="button" id="ask-copy"><span class="go">Copy prompt</span><span class="ok">Copied</span></button></div></div>
 
     </section>
 
@@ -620,7 +661,7 @@ story.addEventListener("click", (e) => { if (e.target === story) closeStory(); }
 // ---------- Scroll-spy: the nav marks the section in view, with a pill that slides between items ----------
 const nav = document.querySelector(".links"), pill = nav.querySelector(".spy");
 const navLinks = [...nav.querySelectorAll("a")];
-const place = (a) => {
+let place = (a) => {
   navLinks.forEach((x) => (x === a ? x.setAttribute("aria-current", "true") : x.removeAttribute("aria-current")));
   if (!a) { pill.style.opacity = "0"; return; }
   pill.style.width = `${a.offsetWidth}px`;
@@ -640,7 +681,58 @@ const spy = new IntersectionObserver((entries) => {
   place(best);
 }, { rootMargin: "-64px 0px -45% 0px", threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
 for (const a of navLinks) { const sec = document.getElementById(a.hash.slice(1)); if (sec) spy.observe(sec); }
+// ---------- Phone nav: one button names the section in view and opens the list ----------
+const jump = document.querySelector(".jump"), jumpNow = jump.querySelector(".jump-now"), menu = document.getElementById("jump-menu");
+const menuLinks = navLinks.map((a) => { const b = a.cloneNode(true); menu.append(b); return b; });
+let menuTimer = 0;
+const setMenu = (open) => {
+  clearTimeout(menuTimer);
+  jump.setAttribute("aria-expanded", String(open));
+  if (open) { menu.hidden = false; requestAnimationFrame(() => menu.classList.add("on")); }
+  else { menu.classList.remove("on"); menuTimer = setTimeout(() => { menu.hidden = true; }, 220); }
+};
+jump.addEventListener("click", () => setMenu(jump.getAttribute("aria-expanded") !== "true"));
+menu.addEventListener("click", (e) => { if (e.target.closest("a")) setMenu(false); });
+document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !e.target.closest(".jump, .jump-menu")) setMenu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) { setMenu(false); jump.focus(); } });
+const placeOld = place;
+place = (a) => {
+  placeOld(a);
+  jumpNow.textContent = a ? a.textContent : "Sections";
+  menuLinks.forEach((m, i) => (navLinks[i] === a ? m.setAttribute("aria-current", "true") : m.removeAttribute("aria-current")));
+};
 addEventListener("resize", () => place(navLinks.find((a) => a.getAttribute("aria-current") === "true") || null));
+
+// ---------- Ask AI: open ChatGPT or Claude with the guide in the prompt, or copy it with the full reference ----------
+const ask = $(".ask-btn"), askMenu = $("#ask-menu");
+const ASK = "I want to use frankaa, an image gallery library for the web (a slider, a lightbox and a strip of pictures). Use the reference below to help me add it to my site. First ask me what I am building and which framework I use.";
+let guide = "", full = "";
+const site = new URL(".", location.href).href;
+fetch(site + "llms.txt").then((r) => r.text()).then((t) => {
+  guide = t;
+  const q = encodeURIComponent(`${ASK}\n\nThe full reference: ${site}llms-full.txt\n\n${t}`);
+  $("#ask-chatgpt").href = `https://chatgpt.com/?q=${q}`;
+  $("#ask-claude").href = `https://claude.ai/new?q=${q}`;
+}).catch(() => {});
+fetch(site + "llms-full.txt").then((r) => r.text()).then((t) => { full = t; }).catch(() => {});
+let askTimer = 0;
+const setAsk = (open) => {
+  clearTimeout(askTimer);
+  ask.setAttribute("aria-expanded", String(open));
+  if (open) { askMenu.hidden = false; requestAnimationFrame(() => askMenu.classList.add("on")); }
+  else { askMenu.classList.remove("on"); askTimer = setTimeout(() => { askMenu.hidden = true; }, 220); }
+};
+ask.addEventListener("click", () => setAsk(ask.getAttribute("aria-expanded") !== "true"));
+askMenu.addEventListener("click", (e) => { if (e.target.closest("a")) setAsk(false); });
+$("#ask-copy").addEventListener("click", (e) => {
+  const b = e.currentTarget;
+  void navigator.clipboard.writeText(`${ASK}\n\n${full || guide || site + "llms-full.txt"}`).then(() => {
+    b.classList.add("done");
+    setTimeout(() => { b.classList.remove("done"); setAsk(false); }, 1100);
+  });
+});
+document.addEventListener("pointerdown", (e) => { if (!askMenu.hidden && !e.target.closest(".ask")) setAsk(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !askMenu.hidden) { setAsk(false); ask.focus(); } });
 
 // ---------- credits ----------
 for (const [id, [t, by, url]] of Object.entries(P)) {
