@@ -77,13 +77,15 @@ return <>{grid}{lightbox.portal}</>;
 
 `react-dom` is an optional peer dependency, used only for that portal.
 
+`<Procession>` renders its first photo on the server, so the first paint is never empty; the slider keeps it until its own photo has decoded.
+
 ## procession (the slider)
 
 `procession(element, options)` turns an element into a slider and returns its controls. The element keeps its own children. It is 4:3 by default; size it with CSS.
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
-| `photos` | `(Photo \| string)[]` | required | `{ src, srcset?, sizes?, alt?, width?, height? }`, or a plain `src` |
+| `photos` | `(Photo \| string)[]` | required | `{ src, srcset?, sizes?, alt?, width?, height?, placeholder? }`, or a plain `src`. `placeholder` is a colour or an image address (a tiny thumbnail, or a blurhash you decoded to a data URL) shown until the photo paints |
 | `label` | `string` | `"Photos"` | Shorthand for `labels.region` |
 | `labels` | `Partial<ProcessionLabels>` | English | Every string, for translation (below) |
 | `start` | `number` | `0` | Photo to start on |
@@ -96,8 +98,17 @@ return <>{grid}{lightbox.portal}</>;
 | `lazyMargin` | `string` | `"100px"` | How near the screen before the other photos load |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: steps jump, no autoplay |
 | `announce` | `boolean` | `true` | Announce changes through a polite live region |
+| `href` | `string` | | Make the slider a link (the track is an `<a href>`), so Cmd, Ctrl and middle click open it as usual |
+| `tabbable` | `boolean` | `true` | False takes the slider out of the tab order, when another link on the card already takes focus |
+| `counter` | `boolean` | `false` | Show a "2 / 5" counter (`labels.counter`) |
+| `zoom` | `boolean` | `false` | Pinch toward the fingers (springs back on release) and double tap to zoom in and out |
+| `zoomCursor` | `boolean` | `false` | The zoom-in cursor, for a slider that opens a lightbox |
+| `focusRing` | `"outside" \| "inset"` | `"outside"` | Inset draws the ring inside, for sliders in a parent with `overflow: hidden` |
+| `icons` | `{ prev?, next?, play?, pause? }` | | Your icons, as the `d` of a 24px stroked path |
 
 Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i), destroy() }`.
+
+`onSelect(index, img, event)` gets the event, so you can leave modified clicks to the browser or call `preventDefault()`. With `zoom`, a single touch tap waits a moment to tell it from a double tap.
 
 ## unfurl (the lightbox)
 
@@ -105,7 +116,7 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
-| `photos` | `(UnfurlItem \| string)[]` | required | Images `{ src, alt?, caption? }` (or a plain `src`) and videos (below), mixed |
+| `photos` | `(UnfurlItem \| string)[]` | required | Images `{ src, srcset?, sizes?, alt?, caption?, placeholder? }` (or a plain `src`) and videos (below), mixed |
 | `topActions` | `{ label, onClick(api), icon? }[]` | | Extra buttons in the top bar, before Close, inside the focus trap. `icon` is a 24px path `d` |
 | `controls` | `(host, api) => cleanup?` | | Mount your own controls in the top bar; return a function to tidy up |
 | `start` | `number` | `0` | Photo to open on |
@@ -120,8 +131,10 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 | `returnFocus` | `boolean \| HTMLElement` | `true` | On close, focus goes back where it was, to this element, or nowhere |
 | `announce` | `boolean` | `true` | Read each photo out through a polite live region |
 | `hideOrigin` | `boolean` | `true` | Hide the origin element while its photo is out |
-| `radius` | `number` | `16` | Corner radius of the photo in its spot (match your thumbnails) |
-| `openRadius` | `number` | `12` | Corner radius when open |
+| `radius` | `number \| [tl, tr, br, bl] \| (i) => ...` | `16` | Corner radius of the photo in its spot (match your thumbnails); four corners, or per photo for grids whose tiles differ |
+| `openRadius` | `number \| [tl, tr, br, bl]` | `12` | Corner radius when open |
+| `zoom` | `boolean \| { max }` | `true` | Pinch, double tap or double click, Ctrl or trackpad pinch, and the + and - keys zoom; one finger or the mouse pans while zoomed. `max` defaults to 4 |
+| `icons` | `{ prev?, next?, close?, play? }` | | Your icons, as the `d` of a 24px stroked path |
 | `container` | `HTMLElement` | `document.body` | Where the dialog mounts and its events are dispatched |
 
 Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`. `destroy()` removes it at once; if it was still open it fires `onCloseStart` and `onCloseEnd` with `reason: "destroy"`, and ends any running animation with `cancelled: true`.
@@ -260,12 +273,28 @@ unfurl({ photos, effect: "wipe" });
 
 ## Styling
 
-`frankaa/style.css` puts every rule inside `:where()`, so any rule of yours wins. Theme with custom properties: `--fk-radius`, `--fk-placeholder`, `--fk-dot`, `--fk-dot-on`, `--fk-arrow-bg`, `--fk-arrow-ink`, `--fk-focus`, `--fk-backdrop`, `--fk-ease`, `--fk-z`.
+Each base rule in `frankaa/style.css` carries one class (`.fk-...`), so a site's element resets (`button {}`, `img {}`, `svg {}`) and a plain `:focus-visible` rule cannot hide the arrows or recolour the rings, while a rule of yours with the same class, loaded later, still wins. The buttons reset what a `button {}` rule may set.
+
+| Property | Default | |
+| --- | --- | --- |
+| `--fk-focus` | `#23306b` | Focus ring on the page (slider) |
+| `--fk-focus-dark` | `#fff` | Focus ring in the lightbox |
+| `--fk-focus-width` | `2px` | |
+| `--fk-press-scale` | `.97` | Buttons when pressed |
+| `--fk-hover-scale` | `1` | Buttons on hover (mouse) |
+| `--fk-font` | `500 13px/1.4 system-ui, ...` | The lightbox's text |
+| `--fk-radius`, `--fk-placeholder` | `12px`, `#ece8e1` | The slider's corners and empty colour |
+| `--fk-dot`, `--fk-dot-on`, `--fk-dot-shadow` | | Dots |
+| `--fk-arrow-bg`, `--fk-arrow-ink`, `--fk-arrow-shadow` | | Slider arrows |
+| `--fk-count-bg`, `--fk-count-ink` | | Slider counter |
+| `--fk-backdrop`, `--fk-backdrop-blur` | `rgba(12, 12, 14, .94)`, `8px` | Lightbox backdrop |
+| `--fk-button-bg`, `--fk-button-bg-hover` | | Lightbox buttons |
+| `--fk-ease`, `--fk-z` | `cubic-bezier(.23, 1, .32, 1)`, `1000` | |
 
 ## Accessibility
 
 - The slider is a labelled carousel region with one tab stop. Arrow keys, Home and End move; Enter selects. Autoplay is off by default, pauses on hover and focus, and has a pause button.
-- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Left and Right move, Home and End jump to the first and last photo, Escape closes. A key move puts a clear focus ring on the matching arrow button. Each photo's position and alt text are announced.
+- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Left and Right move, Home and End jump to the first and last photo, + and - zoom, Escape closes. A key move puts a clear focus ring on the matching arrow button. Each photo's position and alt text are announced.
 - Reduced motion follows the system, or set `reducedMotion` to `"always"` or `"never"`.
 
 ## Motion
@@ -305,11 +334,11 @@ Minified and gzipped, each with the code it pulls in:
 
 | Import | Size |
 | --- | --- |
-| `frankaa/slider` | 3.3 kB |
-| `frankaa/lightbox` | 13.1 kB |
-| `frankaa` (both) | 14.9 kB |
-| `frankaa/react` (both, with bindings) | 15.5 kB |
-| `frankaa/style.css` | 2.0 kB |
+| `frankaa/slider` | 4.4 kB |
+| `frankaa/lightbox` | 14.9 kB |
+| `frankaa` (both) | 17.7 kB |
+| `frankaa/react` (both, with bindings) | 18.5 kB |
+| `frankaa/style.css` | 2.5 kB |
 
 ## Performance
 
@@ -338,7 +367,7 @@ npm run typecheck
 npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
 npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis lock, taps, scroll lock
 npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks
-npm run check:media # top-bar actions and controls, video slides, destroy() hooks
+npm run check:features # actions and controls, videos, destroy() hooks, zoom, resets, slider options
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.

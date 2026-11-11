@@ -44,6 +44,9 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 - Expecting the slider to loop infinitely: `loop` rewinds from the last photo to the first.
 - The lightbox does not wrap by default (the ends rubber-band); pass `loop: true` to wrap.
 - Using `innerHTML` to build captions: pass plain text; frankaa sets it with `textContent`.
+- Writing your own zoom on top: the lightbox zooms by default (pinch, double tap, Ctrl+wheel, + and -); pass `zoom: false` to turn it off.
+- A slider card that should be a link: use `href` (and `tabbable: false` if the card has another focusable link), not a wrapping `<a>` around the slider.
+- Fighting the stylesheet with `!important`: frankaa's base rules have one class of specificity; a later rule with the same class wins. Prefer the `--fk-*` properties.
 
 ## Custom shaders
 

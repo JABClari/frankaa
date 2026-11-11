@@ -47,6 +47,15 @@ priority      boolean              first photo loads eagerly with high fetch pri
 lazyMargin    string               IntersectionObserver rootMargin for loading the other photos. Default "100px"
 reducedMotion "system" | "always" | "never"   default "system"
 announce      boolean              polite live region on change. Default true
+href          string               the track becomes an <a href>: Cmd, Ctrl and middle click work natively
+tabbable      boolean              default true; false takes it out of the tab order
+counter       boolean              a "2 / 5" counter (labels.counter). Default false
+zoom          boolean              pinch (springs back) and double tap zoom. Default false
+zoomCursor    boolean              zoom-in cursor, when it opens a lightbox. Default false
+focusRing     "outside" | "inset"  inset for sliders inside overflow: hidden parents
+icons         { prev?, next?, play?, pause? }   24px stroked path d strings
+Photo.placeholder: a colour or image address (thumbnail or decoded blurhash) shown until the photo paints.
+onSelect(index, img, event): the event lets you leave modified clicks to the browser.
 Hooks: onSlideChange(index, { index, from }), onChange (same), onAnimationStart({ type: "slide", index }), onAnimationEnd(...), onError({ index, src, reason: "load" }), onSelect(index, img)
 
 Returns: { index, el, go(i, smooth = true), next(), prev(), play(), pause(), image(i), destroy() }
@@ -74,8 +83,11 @@ focusTrap     boolean              default true (also sets aria-modal)
 returnFocus   boolean | HTMLElement   default true: focus returns to the element focused before opening
 announce      boolean              default true
 hideOrigin    boolean              hide the origin element while its photo is out. Default true
-radius        number               corner radius at the spot. Default 16 (match your thumbnails)
-openRadius    number               corner radius when open. Default 12
+radius        number | [tl,tr,br,bl] | (i) => ...   corner radius at the spot. Default 16 (match your thumbnails)
+openRadius    number | [tl,tr,br,bl]   corner radius when open. Default 12
+zoom          boolean | { max }    pinch, double tap/click, Ctrl+wheel, + and - zoom; pan while zoomed. Default true (max 4)
+icons         { prev?, next?, close?, play? }   24px stroked path d strings
+image srcset, sizes (default "100vw") and placeholder are used by both renderers (placeholder: CSS renderer).
 container     HTMLElement          mount point and event target. Default document.body
 loop          boolean              wrap from the last photo to the first. Default false (the ends rubber-band)
 Keyboard: Left and Right move, Home and End jump to the first and last, Escape closes, Tab stays inside. A key move puts the focus ring on the matching arrow button.
@@ -311,6 +323,25 @@ const lightbox = useUnfurl(photos, {
   renderControls: (api) => <button type="button" className="fk-unfurl-action" onClick={() => removePage(api.index)}>Remove this page</button>,
 });
 return <>{grid}{lightbox.portal}</>; // portal keeps your React context; needs react-dom
+
+--- 5.15 A slider card that is also a link ---
+
+procession(card, {
+  photos: listing.photos.map((p) => ({ src: p.url, alt: "", placeholder: p.colour })),
+  href: `/l/${listing.slug}`,  // Cmd/Ctrl/middle click open a new tab natively
+  tabbable: false,              // the card's text link takes focus instead
+  focusRing: "inset",           // the card clips overflow
+  counter: true,
+  zoom: true,                   // phone gallery: pinch and double tap
+});
+
+--- 5.16 Server rendering the slider (Next.js) ---
+
+<Procession photos={photos} priority />  // the first photo is in the server HTML; no empty first paint
+
+--- 5.17 Theming ---
+
+:root { --fk-focus: #0b57d0; --fk-focus-dark: #ffd400; --fk-press-scale: .96; --fk-font: 500 14px/1.4 Inter, sans-serif; }
 
 --- 5.14 Tidy up on destroy ---
 

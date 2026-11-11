@@ -29,6 +29,7 @@ export function icon(d: string, size: number): SVGSVGElement {
   return s;
 }
 export const CHEVRON = "M9 6l6 6-6 6";
+export const CHEVRON_LEFT = "M15 6l-6 6 6 6";
 export const CROSS = "M6 6l12 12M18 6L6 18";
 export const PAUSE = "M9 6v12M15 6v12";
 export const PLAY = "M8 5.5v13l10-6.5z";
@@ -45,3 +46,14 @@ export function emitter<O extends object>(options: O, target: () => EventTarget 
 }
 
 export const systemReduces = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Your icons, as the d of a 24px stroked path, in place of the defaults. */
+export type Icons = Partial<{ next: string; prev: string; close: string; play: string; pause: string }>;
+
+/** A CSS background for a placeholder: a colour, or an image address (a tiny thumbnail or a decoded blurhash). */
+export function placeholderStyle(el: HTMLElement, value: string | undefined): void {
+  if (!value) return;
+  const v = value.trim();
+  if (/^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(v) || /^[a-z]+$/i.test(v)) el.style.backgroundColor = v;
+  else el.style.backgroundImage = `url(${JSON.stringify(v)})`;
+}

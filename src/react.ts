@@ -8,6 +8,13 @@ import { unfurl, type Unfurl, type UnfurlApi, type UnfurlOptions } from "./light
 export type ProcessionProps = ProcessionOptions & { className?: string; style?: CSSProperties };
 export type ProcessionHandle = Slider;
 
+// The placeholder as React style (a colour, or an image address), matching what the slider sets.
+function placeholderCss(v: string | undefined): CSSProperties | undefined {
+  if (!v) return undefined;
+  const t = v.trim();
+  return /^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(t) || /^[a-z]+$/i.test(t) ? { backgroundColor: t } : { backgroundImage: `url(${JSON.stringify(t)})`, backgroundSize: "cover", backgroundPosition: "center" };
+}
+
 // Every on* option is wrapped so it always calls the latest prop without rebuilding the slider or lightbox.
 function latestHooks<T extends object>(ref: { current: T }, keys: string[]): Partial<T> {
   const out: Record<string, unknown> = {};
@@ -22,7 +29,7 @@ export const Procession = forwardRef<ProcessionHandle | null, ProcessionProps>(f
   const latest = useRef(props);
   latest.current = props;
   // Rebuild only when the photos or the shape-changing options change.
-  const key = [props.photos.map((p) => (typeof p === "string" ? p : p.src)).join("\n"), props.loop, props.autoplay, props.snap, props.dots, props.arrows, props.reducedMotion, JSON.stringify(props.labels ?? null), props.label].join("|");
+  const key = [props.photos.map((p) => (typeof p === "string" ? p : p.src)).join("\n"), props.loop, props.autoplay, props.snap, props.dots, props.arrows, props.reducedMotion, JSON.stringify(props.labels ?? null), props.label, props.href, props.tabbable, props.counter, props.zoom, props.zoomCursor, props.focusRing, JSON.stringify(props.icons ?? null)].join("|");
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -43,7 +50,18 @@ export const Procession = forwardRef<ProcessionHandle | null, ProcessionProps>(f
     image: (i) => inst.current?.image(i),
     destroy: () => inst.current?.destroy(),
   }), []);
-  return createElement("div", { ref: root, className: props.className, style: props.style });
+  // On the server (and the first client render) the slider's first photo is already there, so the first paint is
+  // never empty; the slider keeps it until its own photo has decoded.
+  const first = props.photos[Math.max(0, Math.min(props.photos.length - 1, props.start ?? 0))];
+  const p = typeof first === "string" ? { src: first } : first;
+  const ssr = p
+    ? createElement("img", {
+        className: "fk-ssr", src: p.src, srcSet: p.srcset, sizes: p.sizes, alt: "", "aria-hidden": true,
+        width: p.width ?? 1200, height: p.height ?? 900, decoding: "async", loading: props.priority ? "eager" : "lazy",
+        draggable: false, style: placeholderCss(p.placeholder),
+      })
+    : null;
+  return createElement("div", { ref: root, className: props.className ? `fk-procession ${props.className}` : "fk-procession", style: props.style, suppressHydrationWarning: true }, ssr);
 });
 
 export type UseUnfurlOptions = Omit<UnfurlOptions, "photos" | "start" | "controls"> & {

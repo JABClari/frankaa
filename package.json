@@ -52,7 +52,8 @@
     "check:keys": "node scripts/check-keys.mjs",
     "check:touch": "node scripts/check-touch.mjs",
     "check:perf": "node scripts/check-perf.mjs",
-    "check:media": "node scripts/check-media.mjs"
+    "pretest": "npm run build",
+    "check:features": "node scripts/check-features.mjs"
   },
   "keywords": [
     "slider",
@@ -92,6 +93,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2"
   },
   "engines": {

@@ -3,19 +3,29 @@
 // CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
 // If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
 // says so through onError, so nothing fails silently.
-import { lockAxis, neighbours, onScreen, pickRenderer, pickSlide, stageBox, swipeIntent, STRIP_GAP, type Box, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
 import { checkEffect, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
-import { CHEVRON, CROSS, PLAY, el, emitter, icon, systemReduces } from "./dom";
+import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
 import { embedUrl, type MediaProvider } from "./media";
 
 export { supported, checkEffect, registerEffect, effectNames };
 export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider };
 export { embedUrl };
 
-export type UnfurlPhoto = { type?: "image"; src: string; alt?: string; caption?: string };
+export type UnfurlPhoto = {
+  type?: "image";
+  src: string;
+  /** Let the browser pick the file: a srcset and sizes (default sizes "100vw"). */
+  srcset?: string;
+  sizes?: string;
+  alt?: string;
+  caption?: string;
+  /** Shown while the photo loads (CSS renderer): a colour, or an image address (thumbnail or decoded blurhash). */
+  placeholder?: string;
+};
 /**
  * A video slide. The poster is what springs from the grid and shows until the person taps play; only then is the
  * player loaded (privacy embeds for YouTube and Vimeo, the official embeds for TikTok and Instagram, a <video> for
@@ -105,9 +115,16 @@ export type UnfurlOptions = UnfurlHooks & {
   announce?: boolean;
   /** Hide the origin element while its photo is out, so it looks lifted. Default true. */
   hideOrigin?: boolean;
-  /** Corner radius of the photo in its spot, and open, in CSS px. Defaults 16 and 12. */
-  radius?: number;
-  openRadius?: number;
+  /** Corner radius of the photo in its spot, in CSS px: one number, four ([top left, top right, bottom right,
+   *  bottom left]), or a function of the photo's index for grids whose tiles differ. Default 16. */
+  radius?: Radius | ((i: number) => Radius);
+  /** Corner radius when open: one number or four. Default 12. */
+  openRadius?: Radius;
+  /** Pinch, double tap (or double click) and Ctrl or trackpad pinch to zoom; drag to pan when zoomed. Default
+   *  true. { max } sets the largest zoom (default 4). */
+  zoom?: boolean | { max?: number };
+  /** Your own icons (next, prev, close, play), as the d of a 24px stroked path. */
+  icons?: Icons;
   /** Where the dialog mounts, and where its events are dispatched. Default document.body. */
   container?: HTMLElement;
 };
@@ -134,6 +151,8 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const photos: UnfurlItem[] = options.photos.map((p) => (typeof p === "string" ? { src: p } : p));
   const isVideo = (p: UnfurlItem): p is UnfurlVideo => p.type === "video";
   const imageOf = (p: UnfurlItem) => (isVideo(p) ? p.poster : p.src);
+  const sourceOf = (p: UnfurlItem) => (isVideo(p) ? { src: p.poster } : { src: p.src, srcset: p.srcset, sizes: p.sizes, placeholder: p.placeholder });
+  const ic = options.icons ?? {};
   const n = photos.length;
   const L: UnfurlLabels = { ...UNFURL_LABELS, ...(options.label ? { dialog: options.label } : {}), ...options.labels };
   const still = resolveReduced(options.reducedMotion, systemReduces());
@@ -167,15 +186,15 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const count = el("span", "fk-unfurl-n", { "aria-hidden": "true" });
   const status = el("span", "fk-sr", announce ? { "aria-live": "polite", "aria-atomic": "true" } : {});
   const closeBtn = el("button", "fk-unfurl-btn fk-unfurl-close", { type: "button", "aria-label": L.close });
-  closeBtn.append(icon(CROSS, 18));
+  closeBtn.append(icon(ic.close ?? CROSS, 18));
   const actions = el("div", "fk-unfurl-actions");
   top.append(count, status, actions, closeBtn);
   const media = el("div", "fk-unfurl-media");
   media.hidden = true;
   const prevBtn = el("button", "fk-unfurl-btn fk-unfurl-prev", { type: "button", "aria-label": L.previous });
   const nextBtn = el("button", "fk-unfurl-btn fk-unfurl-next", { type: "button", "aria-label": L.next });
-  prevBtn.append(icon(CHEVRON, 18));
-  nextBtn.append(icon(CHEVRON, 18));
+  prevBtn.append(icon(ic.prev ?? CHEVRON_LEFT, 18));
+  nextBtn.append(icon(ic.next ?? CHEVRON, 18));
   const cap = el("p", "fk-unfurl-cap");
   root.append(bg, canvas, cssHost, media, top);
   if (n > 1) root.append(prevBtn, nextBtn);
@@ -234,7 +253,9 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   // ---------- Renderers ----------
   const ctx: StageCtx = {
-    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480, count: n, loop,
+    still,
+    rSpot: (i: number) => toR4(typeof options.radius === "function" ? options.radius(i) : options.radius, 16),
+    rOpen: toR4(options.openRadius, 12), duration: effect.duration ?? 480, count: n, loop,
     // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
     // areas, which the overlay carries as padding.
     area: () => {
@@ -249,7 +270,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
   let stage: Stage | null = null;
   if (wantGl) {
-    const built = createGlStage(canvas, photos.map(imageOf), effect, ctx);
+    const built = createGlStage(canvas, photos.map(sourceOf), effect, ctx);
     if (built.stage) stage = built.stage;
     // A shader that does not compile is always reported; missing WebGL only when WebGL was asked for by name.
     else if (built.error.reason === "shader" || options.renderer === "webgl") {
@@ -259,7 +280,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   }
   const useCss = () => {
     stage?.destroy();
-    stage = createCssStage(cssHost, photos.map((p) => ({ src: imageOf(p) })), effect.css ?? "fade", ctx);
+    stage = createCssStage(cssHost, photos.map(sourceOf), effect.css ?? "fade", ctx);
     root.dataset.renderer = "css";
     return stage;
   };
@@ -285,7 +306,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const placeMedia = () => {
     const r = stage?.rect();
     if (!r) return false;
-    Object.assign(media.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: `${ctx.rOpen}px` });
+    Object.assign(media.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: ctx.rOpen.map((x) => `${x}px`).join(" ") });
     return true;
   };
   const showMedia = () => {
@@ -296,7 +317,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     media.replaceChildren();
     media.hidden = false;
     const play = el("button", "fk-unfurl-play", { type: "button", "aria-label": p.title ? `${L.play}: ${p.title}` : L.play });
-    play.append(icon(PLAY, 26));
+    play.append(icon(ic.play ?? PLAY, 26));
     play.addEventListener("click", () => playMedia(p));
     media.append(play);
   };
@@ -384,6 +405,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     const from = index, d = dir ?? (next > from ? 1 : -1);
     const plain = isVideo(photos[from]) || isVideo(photos[next]);
     hideMedia();
+    root.dataset.zoomed = "false";
     index = next;
     label();
     hide(next);
@@ -416,6 +438,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   const teardown = () => {
     setPhase("closed");
+    cancelTap();
     hideMedia();
     try { cleanupControls?.(); } catch (e) { setTimeout(() => { throw e; }); }
     window.removeEventListener("resize", onResize);
@@ -445,6 +468,11 @@ export function unfurl(options: UnfurlOptions): Unfurl {
       else if (act === "prev") { move(-1, "key"); ring(prevBtn); }
       else if (act === "first") show(0, "key", -1);
       else show(n - 1, "key", 1);
+    } else if ((e.key === "+" || e.key === "=" || e.key === "-") && canZoom()) {
+      // + and - zoom about the middle of the photo.
+      e.preventDefault();
+      const r = stage?.current();
+      if (r) zoomAt(r.x + r.w / 2, r.y + r.h / 2, e.key === "-" ? 1 / 1.5 : 1.5);
     } else if (e.key === "Tab" && trap) {
       const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href], iframe, video[controls], [tabindex]:not([tabindex='-1'])")).filter((b) => !b.hidden && b.offsetParent !== null);
       e.preventDefault();
@@ -462,8 +490,39 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   // Gestures. While the finger is down the photo follows it 1:1 (sideways to change photo, down to close, up with
   // resistance); the backdrop fades with the pull. On release the spring takes over with the finger's velocity:
   // it moves, closes or settles back. The photo can be caught at any point, even mid-animation.
-  type Drag = { id: number; x: number; y: number; px: number; axis: "x" | "y" | null; samples: { x: number; y: number; t: number }[] };
+  // Zoom: two fingers pinch toward their midpoint; a double tap (or double click) zooms in at the point or back
+  // out; Ctrl or trackpad pinch on the wheel zooms at the pointer. While zoomed one finger pans, with momentum,
+  // and the photo always covers the view.
+  const zoomOn = options.zoom !== false;
+  const zoomMax = typeof options.zoom === "object" && options.zoom.max ? Math.max(1.5, options.zoom.max) : 4;
+  const canZoom = () => zoomOn && !isVideo(photos[index]) && phase === "open";
+  const view = (): Box => ({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
+  const zoomedNow = () => isZoomed(stage?.current() ?? null, stage?.rect() ?? null);
+  const zoomTo = (box: Box, v = { vx: 0, vy: 0 }) => {
+    const s = stage, rest = s?.rect();
+    if (!s || !rest) return;
+    const target = settleZoom(box, rest, zoomMax, view());
+    root.dataset.zoomed = String(isZoomed(target, rest));
+    void s.glide(target, v);
+  };
+  const zoomAt = (x: number, y: number, factor: number) => {
+    const cur = stage?.current(), rest = stage?.rect();
+    if (!cur || !rest) return;
+    const s = Math.min(zoomMax, Math.max(1, (cur.w * factor) / rest.w)) / (cur.w / rest.w);
+    zoomTo(zoomAbout(cur, s, { x, y }, { x, y }));
+  };
+  const toggleZoom = (x: number, y: number) => {
+    const rest = stage?.rect();
+    if (!rest) return;
+    if (zoomedNow()) zoomTo(rest);
+    else zoomTo(zoomAbout(rest, Math.min(2.5, zoomMax), { x, y }, { x, y }));
+  };
+
+  type Drag = { id: number; x: number; y: number; px: number; axis: "x" | "y" | "pan" | null; box0: Box | null; samples: { x: number; y: number; t: number }[] };
   let drag: Drag | null = null;
+  const pointers = new Map<number, { x: number; y: number }>();
+  let pinch: { d0: number; m0: { x: number; y: number }; box0: Box } | null = null;
+  let afterPinch = false;
   const pull = (dy: number) => Math.min(1, Math.max(0, dy) / (window.innerHeight * 0.5));
   // The strip's width is read once per drag, at the first move, never per frame.
   let stripW = 0;
@@ -478,24 +537,74 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     index = next;
     label();
     hide(next);
+    root.dataset.zoomed = "false";
     emit("onChange", { index: next, from, how: "swipe" }, next, { index: next, from, how: "swipe" });
     animStart("change", next);
     void s.settle(dir, vx).then(() => { animEnd("change", next); if (phase === "open" && index === next) showMedia(); });
   };
+  // Abandon a one-finger drag (a second finger arrived): put things back as they were.
+  const dropDrag = () => {
+    const d = drag;
+    drag = null;
+    if (!d) return;
+    bg.style.transition = ""; bg.style.opacity = "";
+    delete root.dataset.swiping;
+    if (d.axis === "x") stage?.settle(0, 0);
+    else if (d.axis === "y") stage?.release({ vx: 0, vy: 0 });
+  };
   root.addEventListener("pointerdown", (e) => {
-    if (drag || !e.isPrimary || (e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: 0, axis: null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
+    if ((e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    if (pointers.size === 2 && canZoom()) {
+      const cur = stage?.current();
+      dropDrag();
+      if (!cur) return;
+      const [a, b] = [...pointers.values()];
+      pinch = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, box0: cur };
+      cancelTap();
+      return;
+    }
+    if (drag || pinch || pointers.size > 1) return;
+    const pan = canZoom() && zoomedNow();
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: 0, axis: pan ? "pan" : null, box0: pan ? stage!.current() : null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
   });
   root.addEventListener("pointermove", (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size >= 2 && stage) {
+      const [a, b] = [...pointers.values()];
+      const rest = stage.rect();
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      let s = Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0;
+      // Past the limits the pinch resists.
+      if (rest) {
+        const z = (pinch.box0.w * s) / rest.w;
+        if (z < 1) s = (rest.w * (1 - rubber(1 - z, 0.5))) / pinch.box0.w;
+        else if (z > zoomMax) s = (rest.w * (zoomMax + rubber(z - zoomMax, 1))) / pinch.box0.w;
+      }
+      hideMedia();
+      stage.place(zoomAbout(pinch.box0, s, pinch.m0, m));
+      return;
+    }
     const d = drag;
     if (!d || e.pointerId !== d.id || !stage) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     d.samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (d.samples.length > 8) d.samples.shift();
+    if (d.axis === "pan" && d.box0) {
+      // Pan a zoomed photo 1:1; past its edges it resists.
+      const want = { ...d.box0, x: d.box0.x + dx, y: d.box0.y + dy };
+      const rest = stage.rect()!;
+      const ok = clampPan(want, rest, view());
+      const over = (a: number, b: number) => b + Math.sign(a - b) * rubber(Math.abs(a - b), 80);
+      stage.place({ ...want, x: over(want.x, ok.x), y: over(want.y, ok.y) });
+      if (Math.hypot(dx, dy) > 6) cancelTap();
+      return;
+    }
     if (!d.axis) {
       d.axis = lockAxis(dx, dy);
       if (!d.axis) return;
+      cancelTap();
     }
     if (d.axis === "x") {
       // The strip follows the finger 1:1; past the first or last photo it resists.
@@ -513,7 +622,29 @@ export function unfurl(options: UnfurlOptions): Unfurl {
       bg.style.opacity = String(1 - p * 0.75);
     }
   });
+
+  // Taps: with zoom on, a single tap waits a moment for a second; two make a double tap.
+  let tap: { t: number; x: number; y: number; timer: number } | null = null;
+  const cancelTap = () => { if (tap) { clearTimeout(tap.timer); tap = null; } };
+  const onTap = (x: number, y: number, t: number) => {
+    if (!canZoom()) { close(); return; }
+    if (tap && t - tap.t < 300 && Math.hypot(x - tap.x, y - tap.y) < 40) { cancelTap(); toggleZoom(x, y); return; }
+    cancelTap();
+    tap = { t, x, y, timer: window.setTimeout(() => { tap = null; if (!zoomedNow()) close(); }, 300) };
+  };
+
   const end = (e: PointerEvent, cancelled: boolean) => {
+    pointers.delete(e.pointerId);
+    if (pinch) {
+      if (pointers.size < 2) {
+        pinch = null;
+        afterPinch = true;
+        const cur = stage?.current();
+        if (cur) zoomTo(cur);
+      }
+      return;
+    }
+    if (afterPinch) { if (!pointers.size) afterPinch = false; return; }
     const d = drag;
     if (!d || e.pointerId !== d.id) return;
     drag = null;
@@ -525,6 +656,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     bg.style.transition = "";
     bg.style.opacity = "";
     delete root.dataset.swiping;
+    if (d.axis === "pan") {
+      if (Math.hypot(dx, dy) < 6 && !cancelled) { onTap(e.clientX, e.clientY, e.timeStamp); return; }
+      // Momentum: project where the pan would coast to, keep it covering the view, and spring there.
+      const cur = stage?.current();
+      if (cur) zoomTo({ ...cur, x: cur.x + project(v.vx) * 0.35, y: cur.y + project(v.vy) * 0.35 }, v);
+      return;
+    }
     if (d.axis === "x") {
       // Project where the fling would stop, take the nearest photo, and spring there with the finger's velocity.
       const nb = neighbours(index, n, loop);
@@ -534,8 +672,15 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     }
     const intent = cancelled ? null : d.axis === "y" ? swipeIntent(0, dy, 0, v.vy) : swipeIntent(dx, dy, v.vx, v.vy);
     if (d.axis) stage?.release(v);
-    if (intent === "close" || (intent === "tap" && !d.axis)) close();
+    if (intent === "close") close();
+    else if (intent === "tap" && !d.axis) onTap(e.clientX, e.clientY, e.timeStamp);
   };
+  // Ctrl + wheel (and trackpad pinch, which browsers send as Ctrl + wheel) zooms at the pointer.
+  root.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey || !canZoom()) return;
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+  }, { passive: false });
   // iOS and Android: never let a touch on the overlay become a browser pan or zoom. A pan would scroll the page
   // behind and fire pointercancel, which is what made sideways swipes fail. Taps and pointer events still work.
   const noPan = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };

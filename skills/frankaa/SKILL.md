@@ -27,6 +27,7 @@ frankaa is a zero-dependency photo slider (`procession`) and lightbox (`unfurl`)
 - Videos: items `{ type: "video", provider: "youtube" | "vimeo" | "tiktok" | "instagram" | "mp4", src, poster }`; players load on tap; add providers to CSP `frame-src`.
 - Extra top-bar buttons: `topActions` or `controls`; React `renderControls` and render `{lightbox.portal}`. Never inject into the dialog by DOM query.
 - `destroy()` fires the close hooks with `reason: "destroy"`.
+- Zoom is on in the lightbox (pinch, double tap, Ctrl+wheel); slider zoom is opt-in (`zoom: true`). Slider links: `href`, `tabbable: false`, `focusRing: "inset"` in clipped cards. Theme with `--fk-*` properties.
 - Autoplay off, `reducedMotion: "system"`, unless the person asks.
 - Translate with `labels` (`{n}` and `{total}` placeholders).
 - Listen with hooks (`onOpenStart`, `onOpenEnd`, `onCloseStart`, `onCloseEnd`, `onChange`, `onSlideChange`, `onAnimationStart`, `onAnimationEnd`, `onError`) or DOM events `frankaa:<kebab-name>`.

@@ -60,7 +60,7 @@ test("onScreen rejects tiny and off-screen spots", () => {
   assert.ok(!onScreen({ left: 10, top: 900, width: 200, height: 150 }, 1000, 800));
 });
 
-import { draggedBox, flipFrame, lockAxis, neighbours, pickRenderer, pickSlide, project, radiusAt, stepBox, stripStep } from "../src/lightbox-math.ts";
+import { clampPan, draggedBox, flipFrame, isZoomed, lockAxis, neighbours, pickRenderer, pickSlide, project, radiusAt, settleZoom, stepBox, stripStep, toR4, zoomAbout } from "../src/lightbox-math.ts";
 
 test("flipFrame moves and scales the layer and keeps the photo undistorted", () => {
   const rest = { x: 100, y: 50, w: 800, h: 600 };
@@ -73,11 +73,18 @@ test("flipFrame moves and scales the layer and keeps the photo undistorted", () 
   assert.ok(f.ix >= 1 && f.iy >= 1);
 });
 
-test("radiusAt runs from the spot radius to the open radius and back", () => {
+test("radiusAt runs from the spot radii to the open radii and back, per corner", () => {
   const t = { x: 0, y: 0, w: 1000, h: 800 };
-  assert.equal(radiusAt(false, t, t, 16, 12), 12);
-  assert.equal(radiusAt(false, { x: 0, y: 0, w: 0, h: 0 }, t, 16, 12), 16);
-  assert.equal(radiusAt(true, t, t, 16, 12), 16);
+  const spot: [number, number, number, number] = [16, 0, 0, 16], open: [number, number, number, number] = [12, 12, 12, 12];
+  assert.deepEqual(radiusAt(false, t, t, spot, open), [12, 12, 12, 12]);
+  assert.deepEqual(radiusAt(false, { x: 0, y: 0, w: 0, h: 0 }, t, spot, open), [16, 0, 0, 16]);
+  assert.deepEqual(radiusAt(true, t, t, spot, open), [16, 0, 0, 16]);
+});
+
+test("toR4 takes one radius or four", () => {
+  assert.deepEqual(toR4(8, 16), [8, 8, 8, 8]);
+  assert.deepEqual(toR4(undefined, 16), [16, 16, 16, 16]);
+  assert.deepEqual(toR4([1, 2, 3, 4], 16), [1, 2, 3, 4]);
 });
 
 test("stepBox springs all four sides to the target", () => {
@@ -160,4 +167,30 @@ test("stripStep brings the strip home without overshoot", () => {
   while ((Math.abs(x) > 0.25 || Math.abs(v) > 2) && t < 2) { [x, v] = stripStep(x, v, 1 / 60); min = Math.min(min, x); t += 1 / 60; }
   assert.ok(t < 1, `took ${t.toFixed(2)} s`);
   assert.ok(x <= 0.25, "comes back from the left without crossing far to the right");
+});
+
+test("zoomAbout keeps the pinched point under the fingers", () => {
+  const box0 = { x: 100, y: 100, w: 400, h: 300 };
+  const z = zoomAbout(box0, 2, { x: 300, y: 250 }, { x: 300, y: 250 });
+  assert.deepEqual(z, { x: -100, y: -50, w: 800, h: 600 });
+  const moved = zoomAbout(box0, 1, { x: 300, y: 250 }, { x: 320, y: 240 });
+  assert.deepEqual(moved, { x: 120, y: 90, w: 400, h: 300 });
+});
+
+test("clampPan keeps a zoomed photo covering the view and centres a small axis", () => {
+  const rest = { x: 100, y: 200, w: 800, h: 400 }, view = { x: 0, y: 0, w: 1000, h: 800 };
+  const big = { x: 50, y: -100, w: 1600, h: 800 };
+  assert.deepEqual(clampPan(big, rest, view), { x: 0, y: 0, w: 1600, h: 800 });
+  assert.deepEqual(clampPan({ ...big, x: -900 }, rest, view).x, -600);
+  const wide = { x: -500, y: 0, w: 1600, h: 600 }; // shorter than the view: centred on the open box
+  assert.equal(clampPan(wide, rest, view).y, 200 + (400 - 600) / 2);
+});
+
+test("settleZoom snaps back under 1x, caps at max, and clamps", () => {
+  const rest = { x: 100, y: 100, w: 800, h: 600 }, view = { x: 0, y: 0, w: 1000, h: 800 };
+  assert.deepEqual(settleZoom({ x: 150, y: 150, w: 700, h: 525 }, rest, 4, view), rest);
+  const capped = settleZoom({ x: -2000, y: -1500, w: 4800, h: 3600 }, rest, 4, view);
+  assert.equal(capped.w, 3200);
+  assert.ok(isZoomed(capped, rest));
+  assert.ok(!isZoomed(rest, rest));
 });

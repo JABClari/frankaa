@@ -5,7 +5,7 @@
 //   texture first, which is then drawn into the box.
 // Photos are decoded off the main thread (img.decode()) before they are uploaded, and only the current photo and
 // its neighbours are uploaded, one at a time when the browser is idle. Raw WebGL1, no package.
-import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
+import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
 import { PRELUDE, easingFn, uniformKind, type Effect } from "./effects";
 
 const EFFECT_VERT = `attribute vec2 p;
@@ -30,11 +30,13 @@ uniform sampler2D img;
 uniform vec2 asp;
 uniform vec2 part;
 uniform vec2 size;
-uniform float radius;
+uniform vec4 radius;
 uniform float alpha;
 void main() {
-  vec2 q = abs(uv * size - size * 0.5) - (size * 0.5 - radius);
-  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+  vec2 c = uv * size - size * 0.5;
+  float r = c.x < 0.0 ? (c.y < 0.0 ? radius.x : radius.w) : (c.y < 0.0 ? radius.y : radius.z);
+  vec2 q = abs(c) - (size * 0.5 - r);
+  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
   float edge = clamp(0.5 - d, 0.0, 1.0);
   if (edge <= 0.0) discard;
   gl_FragColor = vec4(texture2D(img, ((uv - 0.5) / asp + 0.5) * part).rgb, 1.0) * edge * alpha;
@@ -58,7 +60,11 @@ const idle = (f: () => void) => {
 type Built = { stage: Stage; error?: undefined } | { stage?: undefined; error: { reason: "webgl" | "shader"; message: string } };
 
 /** A WebGL stage on this canvas, or the reason there cannot be one (no WebGL, or the shader did not compile). */
-export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect: Effect, ctx: StageCtx): Built {
+/** A photo to draw: its address, and optionally srcset and sizes so the browser picks the right file. */
+export type GlSource = { src: string; srcset?: string; sizes?: string };
+
+export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], effect: Effect, ctx: StageCtx): Built {
+  const srcs = sources.map((x) => x.src);
   let gl: WebGLRenderingContext | null = null;
   try { gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: true }) as WebGLRenderingContext | null; } catch { gl = null; }
   if (!gl) return { error: { reason: "webgl", message: "WebGL is not available" } };
@@ -135,6 +141,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
           resolve(true);
         };
         img.onerror = () => resolve(false);
+        if (sources[i].srcset) { img.sizes = sources[i].sizes || "100vw"; img.srcset = sources[i].srcset!; }
         img.src = srcs[i];
         (typeof img.decode === "function" ? img.decode() : new Promise((r, j) => { img.onload = r; img.onerror = j; })).then(upload, () => resolve(false));
       });
@@ -182,7 +189,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     const ia = aspect(i), ba = b.w / Math.max(1, b.h);
     return ia > ba ? [ia / ba, 1] : [1, ba / ia];
   };
-  const drawBox = (t: WebGLTexture, b: Box, asp: [number, number], part: [number, number], radius: number, alpha: number) => {
+  const drawBox = (t: WebGLTexture, b: Box, asp: [number, number], part: [number, number], radius: R4, alpha: number) => {
     bind(bx);
     g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, t);
     g.uniform1i(B.img, 0);
@@ -191,7 +198,8 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     g.uniform4f(B.box, b.x, b.y, b.w, b.h);
     g.uniform2f(B.size, b.w, b.h);
     g.uniform2f(B.view, vw, vh);
-    g.uniform1f(B.radius, Math.min(radius, b.w / 2, b.h / 2));
+    const m = Math.min(b.w / 2, b.h / 2);
+    g.uniform4f(B.radius, Math.min(radius[0], m), Math.min(radius[1], m), Math.min(radius[2], m), Math.min(radius[3], m));
     g.uniform1f(B.alpha, alpha);
     g.drawArrays(g.TRIANGLES, 0, 6);
   };
@@ -202,7 +210,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     g.viewport(0, 0, W, H);
     g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
     g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
-    const radius = radiusAt(st.closing, st.box, st.target, ctx.rSpot, ctx.rOpen);
+    const radius = radiusAt(st.closing, st.box, st.target, ctx.rSpot(st.b), ctx.rOpen);
     // The neighbours, while the strip is off centre.
     if (strip.held || Math.abs(strip.x) > 0.5) {
       const { prev, next } = neighbours(st.b, srcs.length, ctx.loop);
@@ -370,6 +378,18 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         if (dir !== 0) prefetch(st.b);
       },
       rect() { return dims[st.b] ? fitFor(st.b) : null; },
+      current() { return dims[st.b] ? { ...st.box } : null; },
+      place(box) {
+        if (dead) return;
+        held = true;
+        st.box = { ...box }; st.vel = [0, 0, 0, 0];
+        if (!raf) draw();
+      },
+      async glide(box, v) {
+        held = false;
+        st.target = { ...box }; st.vel = [v.vx, v.vy, 0, 0];
+        await run();
+      },
       resize() { resizeCanvas(); area = ctx.area(); st.target = fitFor(st.b); void run(); },
       destroy() {
         dead = true;
