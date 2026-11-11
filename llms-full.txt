@@ -15,8 +15,8 @@ Repository: https://github.com/JABClari/frankaa
 npm install frankaa
 
 import { procession, unfurl } from "frankaa";          // both parts
-import { procession } from "frankaa/slider";            // slider only (about 3 kB gzipped)
-import { unfurl } from "frankaa/lightbox";              // lightbox only (about 8.4 kB gzipped)
+import { procession } from "frankaa/slider";            // slider only (about 3.3 kB gzipped)
+import { unfurl } from "frankaa/lightbox";              // lightbox only (about 9.7 kB gzipped)
 import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
 import "frankaa/style.css";                              // required once, anywhere in the app
 
@@ -75,6 +75,8 @@ hideOrigin    boolean              hide the origin element while its photo is ou
 radius        number               corner radius at the spot. Default 16 (match your thumbnails)
 openRadius    number               corner radius when open. Default 12
 container     HTMLElement          mount point and event target. Default document.body
+Keyboard: Left and Right move, Home and End jump to the first and last, Escape closes, Tab stays inside. A key move puts the focus ring on the matching arrow button.
+Gestures: the photo follows the finger 1:1 (sideways to move, down to close); release hands it to a spring seeded with the finger's velocity.
 Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ index }), onCloseEnd({ index }),
        onChange(index, { index, from, how: "key" | "button" | "swipe" | "api" }),
        onAnimationStart({ type: "open" | "close" | "change", index }), onAnimationEnd(same),
@@ -267,7 +269,7 @@ Shader contract:
 - The lightbox clips to the rounded box and runs the open and close spring itself.
 - Compile errors: onError({ reason: "shader", message }) and the lightbox uses the CSS renderer. Never a blank screen.
 - Reduced motion replaces every effect with a fade.
-- Effect object: { fragment, uniforms?, duration? (ms, default 520), easing? ("linear" | "ease-in-out" | (t) => number), css? ("fade" | "slide" | "zoom" | "none") }.
+- Effect object: { fragment, uniforms?, duration? (ms, default 480), easing? ("ease-out" default | "ease-in-out" | "linear" | (t) => number), css? ("fade" | "slide" | "zoom" | "none") }.
 - Shaders run on the GPU with no network or DOM access. Only use shaders you trust; never compile user-supplied shader source.
 
 ====================================================================

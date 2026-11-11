@@ -170,8 +170,8 @@ An effect is a GLSL ES 1.0 fragment shader. The built-ins use the same contract,
 import { registerEffect, unfurl } from "frankaa";
 
 registerEffect("wipe", {
-  duration: 600,                 // ms, default 520
-  easing: "ease-in-out",         // "linear", "ease-in-out" (default) or (t) => number
+  duration: 600,                 // ms, default 480
+  easing: "ease-out",            // "ease-out" (default), "ease-in-out", "linear" or (t) => number
   css: "slide",                  // what the CSS renderer does instead: "fade" (default), "slide", "zoom", "none"
   uniforms: { uSoftness: 0.08 }, // a number is a float, an array of 2 to 4 numbers a vec2 to vec4
   fragment: `
@@ -219,8 +219,17 @@ unfurl({ photos, effect: "wipe" });
 ## Accessibility
 
 - The slider is a labelled carousel region with one tab stop. Arrow keys, Home and End move; Enter selects. Autoplay is off by default, pauses on hover and focus, and has a pause button.
-- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Arrow keys move and Escape closes. Each photo's position and alt text are announced.
+- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Left and Right move, Home and End jump to the first and last photo, Escape closes. A key move puts a clear focus ring on the matching arrow button. Each photo's position and alt text are announced.
 - Reduced motion follows the system, or set `reducedMotion` to `"always"` or `"never"`.
+
+## Motion
+
+- Open and close are critically damped springs: no bounce, about 250 ms to cover 95% of the way in and 220 ms out, so the exit is quicker than the entrance.
+- Gestures follow the finger 1:1 with no easing: sideways to change photo, down to close (the backdrop fades with the pull), up with resistance. On release the spring carries on from the finger's velocity, and the photo can be caught again mid-animation.
+- A short fast flick counts; a drag released while heading back springs back.
+- Photo changes default to ease-out (no slow start on something the person triggered). In the CSS renderer they stay under 300 ms.
+- Buttons press to scale .97. Hover and fades use `cubic-bezier(.23, 1, .32, 1)`.
+- Reduced motion: no spring, no effect, a short fade; finger tracking stays, since the person is making that motion.
 
 ## Security, CSP and CORS
 
@@ -241,10 +250,10 @@ Minified and gzipped, each with the code it pulls in:
 
 | Import | Size |
 | --- | --- |
-| `frankaa/slider` | 3.0 kB |
-| `frankaa/lightbox` | 8.4 kB |
-| `frankaa` (both) | 10.3 kB |
-| `frankaa/react` (both, with bindings) | 10.7 kB |
+| `frankaa/slider` | 3.3 kB |
+| `frankaa/lightbox` | 9.7 kB |
+| `frankaa` (both) | 11.5 kB |
+| `frankaa/react` (both, with bindings) | 12.0 kB |
 | `frankaa/style.css` | 1.6 kB |
 
 ## Using frankaa with AI
@@ -264,6 +273,7 @@ npm install
 npm run build      # dist/ and docs/lib/, with a size report
 npm test           # node --test, needs Node 22.18 or later
 npm run typecheck
+npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.

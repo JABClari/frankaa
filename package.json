@@ -48,7 +48,8 @@
     "build": "node scripts/build.mjs",
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "check:keys": "node scripts/check-keys.mjs"
   },
   "keywords": [
     "slider",

@@ -37,13 +37,20 @@ test("easeInOut runs 0 to 1, symmetric, clamped", () => {
   assert.ok(Math.abs(easeInOut(0.25) + easeInOut(0.75) - 1) < 1e-9);
 });
 
-test("swipeIntent: sideways moves, down closes, still is a tap", () => {
-  assert.equal(swipeIntent(-120, 10, 300), "next");
-  assert.equal(swipeIntent(120, 10, 300), "prev");
-  assert.equal(swipeIntent(-30, 2, 40), "next"); // a short fast flick
-  assert.equal(swipeIntent(5, 120, 400), "close");
-  assert.equal(swipeIntent(2, 3, 100), "tap");
-  assert.equal(swipeIntent(20, 20, 600), null);
+test("swipeIntent: sideways moves, down closes, still is a tap, short flicks count", () => {
+  assert.equal(swipeIntent(-120, 0, -100, 0), "next");
+  assert.equal(swipeIntent(120, 0, 100, 0), "prev");
+  assert.equal(swipeIntent(-30, 0, -900, 0), "next"); // a short fast flick
+  assert.equal(swipeIntent(-30, 0, -100, 0), null);  // a short slow drag springs back
+  assert.equal(swipeIntent(0, 120, 0, 50), "close");
+  assert.equal(swipeIntent(0, 40, 0, 800), "close"); // a flick down
+  assert.equal(swipeIntent(2, 3), "tap");
+  assert.equal(swipeIntent(20, 30, 0, 0), null);
+});
+
+test("swipeIntent: a drag released while heading back does not count", () => {
+  assert.equal(swipeIntent(-120, 0, 600, 0), null);
+  assert.equal(swipeIntent(0, 150, 0, -600), null);
 });
 
 test("onScreen rejects tiny and off-screen spots", () => {
@@ -53,7 +60,7 @@ test("onScreen rejects tiny and off-screen spots", () => {
   assert.ok(!onScreen({ left: 10, top: 900, width: 200, height: 150 }, 1000, 800));
 });
 
-import { flipFrame, pickRenderer, radiusAt, stepBox } from "../src/lightbox-math.ts";
+import { draggedBox, flipFrame, pickRenderer, radiusAt, stepBox } from "../src/lightbox-math.ts";
 
 test("flipFrame moves and scales the layer and keeps the photo undistorted", () => {
   const rest = { x: 100, y: 50, w: 800, h: 600 };
@@ -87,4 +94,32 @@ test("pickRenderer: css when asked or without WebGL, else WebGL", () => {
   assert.equal(pickRenderer("auto", false), "css");
   assert.equal(pickRenderer("css", true), "css");
   assert.equal(pickRenderer("webgl", false), "css");
+});
+
+test("the springs land without a bounce, and closing is quicker than opening", () => {
+  const run = (cfg: typeof SPRING_OPEN) => {
+    let x = 0, v = 0, t = 0, peak = 0, t95 = 0;
+    while (!settled(x, v, 1000) && t < 2) { [x, v] = springStep(x, v, 1000, 1 / 240, cfg); t += 1 / 240; peak = Math.max(peak, x); if (!t95 && x > 950) t95 = t; }
+    return { t: t95, overshoot: peak - 1000 };
+  };
+  const open = run(SPRING_OPEN), close = run(SPRING_CLOSE);
+  assert.ok(open.overshoot < 1, `open overshoots ${open.overshoot.toFixed(2)} px`);
+  assert.ok(close.overshoot < 1, `close overshoots ${close.overshoot.toFixed(2)} px`);
+  assert.ok(close.t < open.t, "exit faster than entrance");
+  assert.ok(open.t < 0.3, `open takes ${open.t.toFixed(2)} s to cover 95%`);
+});
+
+test("stepBox keeps release velocity: a flick overshoots the spring's resting path less than it starts", () => {
+  const target = { x: 0, y: 0, w: 100, h: 100 };
+  const a = { ...target, y: 200 }, b = { ...target, y: 200 };
+  const va = [0, 0, 0, 0], vb = [0, 2000, 0, 0];
+  stepBox(a, va, target, 1 / 60, SPRING_OPEN);
+  stepBox(b, vb, target, 1 / 60, SPRING_OPEN);
+  assert.ok(b.y > a.y, "the downward flick carries on before the spring turns it");
+});
+
+test("draggedBox moves and scales the open box about its centre", () => {
+  const rest = { x: 100, y: 100, w: 400, h: 200 };
+  assert.deepEqual(draggedBox(rest, { x: 0, y: 0, s: 1 }), rest);
+  assert.deepEqual(draggedBox(rest, { x: 10, y: 50, s: 0.5 }), { x: 210, y: 200, w: 200, h: 100 });
 });

@@ -25,10 +25,14 @@ test("registerEffect adds by name and refuses an effect without a shader", () =>
   assert.throws(() => registerEffect("bad", {} as never), TypeError);
 });
 
-test("easingFn: linear, the default ease-in-out, and your own function", () => {
+test("easingFn: linear, ease-in-out, the default ease-out, and your own function", () => {
   assert.equal(easingFn("linear")(0.3), 0.3);
-  assert.equal(easingFn(undefined)(0.5), 0.5);
-  assert.equal(easingFn(undefined)(2), 1);
+  assert.equal(easingFn("ease-in-out")(0.5), 0.5);
+  const out = easingFn(undefined);
+  assert.equal(out(0), 0);
+  assert.equal(out(2), 1);
+  assert.ok(out(0.25) > 0.6, "ease-out is fast at the start");
+  assert.ok(out(0.1) > easingFn("linear")(0.1), "no slow start");
   assert.equal(easingFn((t) => t * t)(0.5), 0.25);
 });
 

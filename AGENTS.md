@@ -49,7 +49,7 @@ GLSL ES 1.0 fragment shader with `precision mediump float;`, `varying vec2 vUv`,
 
 - [ ] `import "frankaa/style.css"` is present once.
 - [ ] Keyboard: the slider takes focus with Tab; Left and Right move it; Enter opens the lightbox (if wired).
-- [ ] In the lightbox: Left and Right move, Escape closes, Tab stays inside, and focus returns to the thumbnail or slider after closing.
+- [ ] In the lightbox: Left and Right move, Home and End jump, Escape closes, Tab stays inside, and focus returns to the thumbnail or slider after closing.
 - [ ] Screen reader names: the slider has a `label`, the lightbox has a `label`, every photo has `alt`.
 - [ ] Reduced motion: with the system setting on (or `reducedMotion: "always"`), opening is a short fade and the slider steps without smooth scrolling.
 - [ ] No layout shift: the slider has a fixed aspect ratio or height before photos load; photos pass `width` and `height`.

@@ -3,7 +3,7 @@
 //    the photo's box;
 // 2. that texture is drawn where the spring says, clipped to a rounded box, with a fade when asked.
 // Raw WebGL1, no package.
-import { containBox, radiusAt, stepBox, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
+import { containBox, draggedBox, radiusAt, stepBox, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
 import { PRELUDE, easingFn, uniformKind, type Effect } from "./effects";
 
 const EFFECT_VERT = `attribute vec2 p;
@@ -148,7 +148,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
   const t0 = performance.now();
 
   const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
-  let raf = 0, last = 0, dead = false;
+  let raf = 0, last = 0, dead = false, held = false;
   let waiters: (() => void)[] = [];
   const swapMs = ctx.still ? FADE_MS : ctx.duration;
 
@@ -206,7 +206,9 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     const dt = Math.min(1 / 15, Math.max(0, (now - (last || now - 1000 / 60)) / 1000));
     last = now;
     let moving = false;
-    if (ctx.still) st.box = { ...st.target };
+    // While a finger holds the photo it stays where the finger put it; the spring takes over on release.
+    if (held) moving = true;
+    else if (ctx.still) st.box = { ...st.target };
     else moving = stepBox(st.box, st.vel, st.target, dt, st.closing ? SPRING_CLOSE : SPRING_OPEN);
     if (st.swapAt) {
       const t = swapMs > 0 ? (now - st.swapAt) / swapMs : 1;
@@ -255,7 +257,20 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         await Promise.all([p, run()]);
         return true;
       },
+      track(o) {
+        if (dead) return;
+        held = true;
+        st.box = draggedBox(st.target, o);
+        st.vel = [0, 0, 0, 0];
+        if (!raf) draw();
+      },
+      release(v) {
+        held = false;
+        st.vel = [v.vx, v.vy, 0, 0];
+        void run();
+      },
       async close(to) {
+        held = false;
         st.closing = true;
         if (ctx.still || !to) {
           st.fadeAt = performance.now(); st.fadeOut = true;

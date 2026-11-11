@@ -19,8 +19,10 @@ export function stageBox(vw: number, vh: number): Box {
 }
 
 export type SpringCfg = { stiffness: number; damping: number };
-export const SPRING_OPEN: SpringCfg = { stiffness: 320, damping: 32 };
-export const SPRING_CLOSE: SpringCfg = { stiffness: 380, damping: 36 };
+// Critically damped (damping = 2 * sqrt(stiffness)): it lands without a bounce, since a button or key applies no
+// force. 95% of the way in about 250 ms (open) and 220 ms (close): the exit is quicker than the entrance.
+export const SPRING_OPEN: SpringCfg = { stiffness: 380, damping: 39 };
+export const SPRING_CLOSE: SpringCfg = { stiffness: 520, damping: 46 };
 
 /** One spring step for one value (semi-implicit Euler). Returns the new value and speed. */
 export function springStep(x: number, v: number, target: number, dt: number, c: SpringCfg): [number, number] {
@@ -38,13 +40,21 @@ export function easeInOut(t: number): number {
   return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 }
 
-/** What a finished pointer gesture means: a sideways swipe moves, a pull down closes, a still tap is a tap. */
+/**
+ * What a finished pointer gesture means, from its distance (px) and release velocity (px/s): a sideways swipe or
+ * flick moves, a pull or flick down closes, a still tap is a tap, anything else springs back (null).
+ * A flick counts even when short, and a drag released while moving back toward the start does not.
+ */
 export type Swipe = "next" | "prev" | "close" | "tap" | null;
-export function swipeIntent(dx: number, dy: number, ms: number): Swipe {
-  const dt = Math.max(1, ms);
-  if (Math.abs(dx) > Math.abs(dy) && (Math.abs(dx) > 48 || Math.abs(dx) / dt > 0.4)) return dx < 0 ? "next" : "prev";
-  if (dy > 80 || (dy > 24 && dy / dt > 0.5)) return "close";
-  if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return "tap";
+export function swipeIntent(dx: number, dy: number, vx = 0, vy = 0): Swipe {
+  if (Math.abs(dx) < 6 && Math.abs(dy) < 6 && Math.hypot(vx, vy) < 200) return "tap";
+  if (Math.abs(dx) > Math.abs(dy)) {
+    const back = vx * dx < 0 && Math.abs(vx) > 200;
+    if (!back && (Math.abs(dx) > 64 || (Math.abs(dx) > 12 && Math.abs(vx) > 400))) return dx < 0 ? "next" : "prev";
+    return null;
+  }
+  const back = vy < -200;
+  if (!back && (dy > 96 || (dy > 24 && vy > 500))) return "close";
   return null;
 }
 
@@ -98,6 +108,16 @@ export type Stage = {
   show(i: number, dir: 1 | -1): Promise<boolean>;
   /** Spring back to `to` (or fade out). */
   close(to: Box | null): Promise<void>;
+  /** While a finger is down: draw the photo at its open box moved by x, y and scaled by s, 1:1, no spring. */
+  track(o: { x: number; y: number; s: number }): void;
+  /** The finger lifted: hand the photo to the spring, seeded with the release velocity (px/s). */
+  release(v: { vx: number; vy: number }): void;
   resize(): void;
   destroy(): void;
 };
+
+/** The open box moved by a drag offset and scaled about its centre. */
+export function draggedBox(rest: Box, o: { x: number; y: number; s: number }): Box {
+  const w = rest.w * o.s, h = rest.h * o.s;
+  return { x: rest.x + o.x + (rest.w - w) / 2, y: rest.y + o.y + (rest.h - h) / 2, w, h };
+}

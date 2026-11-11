@@ -1,1 +1,1 @@
-import{a,b}from"./chunks/chunk-ZPHI7DQN.js";import"./chunks/chunk-7EXRAY4L.js";export{a as PROCESSION_LABELS,b as procession};
+import{a,b}from"./chunks/chunk-4ICVDGM5.js";import"./chunks/chunk-RKQ7TKWN.js";export{a as PROCESSION_LABELS,b as procession};

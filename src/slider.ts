@@ -3,7 +3,7 @@
 // show on hover with a mouse and step one photo, and photos past the first load only once the slider comes near
 // the screen (or is touched). Optional: loop, autoplay (off by default, with a pause button), proximity snap.
 import { clampIndex, indexAt } from "./slider-math";
-import { fill, nextIndex, resolveReduced, type ReducedMotion } from "./shared";
+import { fill, nextIndex, resolveReduced, sliderKey, type ReducedMotion } from "./shared";
 import { CHEVRON, PAUSE, PLAY, el, emitter, icon, systemReduces } from "./dom";
 
 export type Photo = {
@@ -108,6 +108,7 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
   root.setAttribute("role", "region");
   root.setAttribute("aria-roledescription", "carousel");
   root.setAttribute("aria-label", L.region);
+  if (reduced()) root.dataset.motion = "reduced";
 
   // The track is the one tab stop: arrow keys, Home and End step through it; Enter selects.
   const track = el("div", "fk-track", { tabindex: "0", "aria-label": `${L.region}, ${L.hint}` });
@@ -244,14 +245,15 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
   const vis = () => sync();
 
   const onKey = (e: KeyboardEvent) => {
-    const back = rtl() ? "ArrowRight" : "ArrowLeft", fwd = rtl() ? "ArrowLeft" : "ArrowRight";
-    if (e.key === fwd) step(1, "key");
-    else if (e.key === back) step(-1, "key");
-    else if (e.key === "Home") go(0);
-    else if (e.key === "End") go(n - 1);
-    else if (e.key === "Enter" && options.onSelect) options.onSelect(at, imgs[at]);
-    else return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const act = sliderKey(e.key, rtl());
+    if (!act) return;
     e.preventDefault();
+    if (act === "next") step(1, "key");
+    else if (act === "prev") step(-1, "key");
+    else if (act === "first") go(0);
+    else if (act === "last") go(n - 1);
+    else options.onSelect?.(at, imgs[at]);
   };
   const onClick = (e: MouseEvent) => {
     if ((e.target as Element).closest?.(".fk-photo") && options.onSelect) options.onSelect(at, imgs[at]);
@@ -296,7 +298,7 @@ export function procession(root: HTMLElement, options: ProcessionOptions): Proce
       document.removeEventListener("visibilitychange", vis);
       added.forEach((a) => a.remove());
       root.classList.remove("fk-procession");
-      ["role", "aria-roledescription", "aria-label"].forEach((a) => root.removeAttribute(a));
+      ["role", "aria-roledescription", "aria-label", "data-motion"].forEach((a) => root.removeAttribute(a));
     },
   };
 }

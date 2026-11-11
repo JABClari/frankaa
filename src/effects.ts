@@ -22,16 +22,16 @@
 /** What the CSS renderer does for an effect: a crossfade, a crossfade with a short slide or a zoom, or a cut. */
 export type CssTransition = "fade" | "slide" | "zoom" | "none";
 export type UniformValue = number | [number, number] | [number, number, number] | [number, number, number, number];
-export type Easing = "linear" | "ease-in-out" | ((t: number) => number);
+export type Easing = "linear" | "ease-out" | "ease-in-out" | ((t: number) => number);
 
 export type Effect = {
   /** The fragment shader (see the contract above). */
   fragment: string;
   /** Your own uniforms: a number is a float, an array of 2 to 4 numbers a vec2 to vec4. */
   uniforms?: Record<string, UniformValue>;
-  /** How long a change takes, in ms. Default 520. */
+  /** How long a change takes, in ms. Default 480. */
   duration?: number;
-  /** The curve for uProgress. Default "ease-in-out". */
+  /** The curve for uProgress. Default "ease-out": a change starts at once and lands softly. */
   easing?: Easing;
   /** What the CSS renderer does instead. Default "fade". */
   css?: CssTransition;
@@ -57,7 +57,7 @@ export const PRELUDE = `#define coverUv(uv, ts, rs) (((uv) - 0.5) * vec2(min(1.0
 
 const effects: Record<string, Effect> = {
   displacement: {
-    duration: 520,
+    duration: 480,
     css: "slide",
     fragment: HEAD + `
 float hash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
@@ -75,7 +75,7 @@ void main() {
 }`,
   },
   ripple: {
-    duration: 640,
+    duration: 560,
     css: "zoom",
     fragment: HEAD + `
 void main() {
@@ -89,13 +89,13 @@ void main() {
 }`,
   },
   fade: {
-    duration: 320,
+    duration: 260,
     css: "fade",
     fragment: HEAD + `
 void main() { gl_FragColor = mix(getFromColor(vUv), getToColor(vUv), uProgress); }`,
   },
   zoom: {
-    duration: 460,
+    duration: 380,
     css: "zoom",
     fragment: HEAD + `
 void main() {
@@ -133,10 +133,12 @@ export const effectNames = (): string[] => Object.keys(effects);
 export function easingFn(e: Easing | undefined): (t: number) => number {
   if (typeof e === "function") return e;
   if (e === "linear") return (t) => Math.min(1, Math.max(0, t));
-  return (t) => {
+  if (e === "ease-in-out") return (t) => {
     const u = Math.min(1, Math.max(0, t));
     return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
   };
+  // Ease-out (quartic), close to cubic-bezier(.23, 1, .32, 1): no slow start on something the person triggered.
+  return (t) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 4);
 }
 
 /** GL uniform setter name for a value: uniform1f for a number, uniform2fv to uniform4fv for arrays. */

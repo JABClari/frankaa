@@ -7,7 +7,7 @@ import { onScreen, pickRenderer, stageBox, swipeIntent, type Box, type RendererP
 import { checkEffect, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
-import { fill, resolveReduced, type ReducedMotion } from "./shared";
+import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
 import { CHEVRON, CROSS, el, emitter, icon, systemReduces } from "./dom";
 
 export { supported, checkEffect, registerEffect, effectNames };
@@ -114,6 +114,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   // The dialog and its controls. Text goes in with textContent only.
   const root = el("div", "fk-unfurl", { role: "dialog", "aria-label": L.dialog, "data-phase": "opening" });
   if (trap) root.setAttribute("aria-modal", "true");
+  if (still) root.dataset.motion = "reduced";
   const bg = el("div", "fk-unfurl-bg", { "aria-hidden": "true" });
   const canvas = el("canvas", "fk-unfurl-gl", { "aria-hidden": "true" });
   const cssHost = el("div", "fk-unfurl-css");
@@ -169,7 +170,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   // ---------- Renderers ----------
   const ctx: StageCtx = {
-    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 520,
+    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480,
     area: () => stageBox(window.innerWidth, window.innerHeight),
   };
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
@@ -267,12 +268,20 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     if (back && document.contains(back)) back.focus({ preventScroll: true });
   };
 
-  // Keys: Escape closes, arrows move, Tab stays inside (unless focusTrap is false).
+  // Keys: arrows move, Home and End jump, Escape closes, Tab stays inside (unless focusTrap is false). A key move
+  // puts focus on the matching arrow button, so the person sees a clear focus ring on what they just did.
+  const ring = (b: HTMLElement) => { if (b.offsetParent !== null && root.contains(document.activeElement)) b.focus({ preventScroll: true }); };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); move(1, "key"); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); move(-1, "key"); }
-    else if (e.key === "Tab" && trap) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const act = lightboxKey(e.key);
+    if (act) {
+      e.preventDefault();
+      if (act === "close") close();
+      else if (act === "next") { move(1, "key"); ring(nextBtn); }
+      else if (act === "prev") { move(-1, "key"); ring(prevBtn); }
+      else if (act === "first") show(0, "key", -1);
+      else show(n - 1, "key", 1);
+    } else if (e.key === "Tab" && trap) {
       const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href]")).filter((b) => !b.hidden && b.offsetParent !== null);
       e.preventDefault();
       if (!f.length) return;
@@ -286,21 +295,51 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   prevBtn.addEventListener("click", () => move(-1, "button"));
   nextBtn.addEventListener("click", () => move(1, "button"));
 
-  // Swipe sideways to move, pull down to close, tap outside the controls to close.
-  let drag: { x: number; y: number; t: number } | null = null;
+  // Gestures. While the finger is down the photo follows it 1:1 (sideways to change photo, down to close, up with
+  // resistance); the backdrop fades with the pull. On release the spring takes over with the finger's velocity:
+  // it moves, closes or settles back. The photo can be caught at any point, even mid-animation.
+  type Drag = { id: number; x: number; y: number; axis: "x" | "y" | null; samples: { x: number; y: number; t: number }[] };
+  let drag: Drag | null = null;
+  const pull = (dy: number) => Math.min(1, Math.max(0, dy) / (window.innerHeight * 0.5));
   root.addEventListener("pointerdown", (e) => {
-    if ((e.target as Element).closest("button, a")) return;
-    drag = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    if (drag || !e.isPrimary || (e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
+    try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   });
-  root.addEventListener("pointerup", (e) => {
-    const d = drag; drag = null;
-    if (!d) return;
-    const intent = swipeIntent(e.clientX - d.x, e.clientY - d.y, e.timeStamp - d.t);
-    if (intent === "next") move(1, "swipe");
-    else if (intent === "prev") move(-1, "swipe");
-    else if (intent === "close" || intent === "tap") close();
+  root.addEventListener("pointermove", (e) => {
+    const d = drag;
+    if (!d || e.pointerId !== d.id || !stage) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    d.samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+    if (d.samples.length > 8) d.samples.shift();
+    if (!d.axis) {
+      if (Math.hypot(dx, dy) < 8) return;
+      d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    }
+    if (d.axis === "x") stage.track({ x: n > 1 ? dx : rubber(Math.abs(dx), 60) * Math.sign(dx), y: 0, s: 1 });
+    else {
+      const p = pull(dy);
+      stage.track({ x: dx * 0.5, y: dy > 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p });
+      bg.style.transition = "none";
+      bg.style.opacity = String(1 - p * 0.75);
+    }
   });
-  root.addEventListener("pointercancel", () => { drag = null; });
+  const end = (e: PointerEvent, cancelled: boolean) => {
+    const d = drag;
+    if (!d || e.pointerId !== d.id) return;
+    drag = null;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    const v = velocity([...d.samples, { x: e.clientX, y: e.clientY, t: e.timeStamp }]);
+    bg.style.transition = "";
+    bg.style.opacity = "";
+    const intent = cancelled ? null : d.axis === "x" ? swipeIntent(dx, 0, v.vx, 0) : d.axis === "y" ? swipeIntent(0, dy, 0, v.vy) : swipeIntent(dx, dy, v.vx, v.vy);
+    if (d.axis) stage?.release(v);
+    if (intent === "next" && n > 1) move(1, "swipe");
+    else if (intent === "prev" && n > 1) move(-1, "swipe");
+    else if (intent === "close" || (intent === "tap" && !d.axis)) close();
+  };
+  root.addEventListener("pointerup", (e) => end(e, false));
+  root.addEventListener("pointercancel", (e) => end(e, true));
 
   return {
     get index() { return index; },

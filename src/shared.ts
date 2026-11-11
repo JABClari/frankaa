@@ -37,3 +37,44 @@ export function isCrossOrigin(src: string, base: string): boolean {
     return false;
   }
 }
+
+export type LightboxKeyAction = "next" | "prev" | "first" | "last" | "close";
+/** What a key does in the lightbox. Arrows move, Home and End jump, Escape closes. Others pass through. */
+export function lightboxKey(key: string): LightboxKeyAction | null {
+  switch (key) {
+    case "ArrowRight": return "next";
+    case "ArrowLeft": return "prev";
+    case "Home": return "first";
+    case "End": return "last";
+    case "Escape": case "Esc": return "close";
+    default: return null;
+  }
+}
+
+export type SliderKeyAction = "next" | "prev" | "first" | "last" | "select";
+/** What a key does on the focused slider track. In right-to-left text the arrows swap. */
+export function sliderKey(key: string, rtl = false): SliderKeyAction | null {
+  if (key === "ArrowRight") return rtl ? "prev" : "next";
+  if (key === "ArrowLeft") return rtl ? "next" : "prev";
+  if (key === "Home") return "first";
+  if (key === "End") return "last";
+  if (key === "Enter") return "select";
+  return null;
+}
+
+/** Velocity in px/s from recent pointer samples (the last ~100 ms), for seeding the settle spring. */
+export function velocity(samples: { x: number; y: number; t: number }[]): { vx: number; vy: number } {
+  if (samples.length < 2) return { vx: 0, vy: 0 };
+  const last = samples[samples.length - 1];
+  let first = samples[0];
+  for (const s of samples) if (last.t - s.t <= 100) { first = s; break; }
+  const dt = (last.t - first.t) / 1000;
+  if (dt <= 0) return { vx: 0, vy: 0 };
+  return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };
+}
+
+/** Rubber-band: past a limit, a drag moves only a fraction of the distance (Apple-style resistance). */
+export function rubber(d: number, limit: number, k = 0.55): number {
+  if (d <= 0 || limit <= 0) return d <= 0 ? 0 : d;
+  return (1 - 1 / ((d * k) / limit + 1)) * limit;
+}
