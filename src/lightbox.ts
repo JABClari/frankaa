@@ -3,17 +3,45 @@
 // CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
 // If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
 // says so through onError, so nothing fails silently.
-import { lockAxis, neighbours, onScreen, pickRenderer, pickSlide, stageBox, swipeIntent, STRIP_GAP, type Box, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
 import { checkEffect, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
-import { CHEVRON, CROSS, el, emitter, icon, systemReduces } from "./dom";
+import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
+import { embedUrl, type MediaProvider } from "./media";
 
 export { supported, checkEffect, registerEffect, effectNames };
-export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion };
+export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider };
+export { embedUrl };
 
-export type UnfurlPhoto = { src: string; alt?: string; caption?: string };
+export type UnfurlPhoto = {
+  type?: "image";
+  src: string;
+  /** Let the browser pick the file: a srcset and sizes (default sizes "100vw"). */
+  srcset?: string;
+  sizes?: string;
+  alt?: string;
+  caption?: string;
+  /** Shown while the photo loads (CSS renderer): a colour, or an image address (thumbnail or decoded blurhash). */
+  placeholder?: string;
+};
+/**
+ * A video slide. The poster is what springs from the grid and shows until the person taps play; only then is the
+ * player loaded (privacy embeds for YouTube and Vimeo, the official embeds for TikTok and Instagram, a <video> for
+ * mp4). Give the poster the video's shape.
+ */
+export type UnfurlVideo = { type: "video"; provider: MediaProvider; src: string; poster: string; alt?: string; caption?: string; title?: string };
+export type UnfurlItem = UnfurlPhoto | UnfurlVideo;
+/** What actions and controls get: the lightbox's state and a few of its controls. */
+export type UnfurlApi = { readonly index: number; readonly item: UnfurlItem; close(): void; next(): void; prev(): void; show(i: number): void };
+export type UnfurlAction = {
+  /** The button's text, or its accessible name when it has an icon. */
+  label: string;
+  onClick: (api: UnfurlApi) => void;
+  /** An icon: the d of a 24px stroked path. With an icon the button is round and shows only the icon. */
+  icon?: string;
+};
 export type MoveHow = "key" | "button" | "swipe" | "api";
 export type AnimationType = "open" | "close" | "change";
 
@@ -25,29 +53,43 @@ export type UnfurlLabels = {
   previous: string;
   /** Read out on each photo. {n}, {total}. Default "Photo {n} of {total}". The photo's alt follows it. */
   position: string;
+  /** Read out on a video slide. Default "Video {n} of {total}". */
+  videoPosition: string;
+  /** The play button on a video slide. Default "Play video". */
+  play: string;
   /** The visible counter. {n}, {total}. Default "{n} / {total}". */
   counter: string;
 };
-export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", counter: "{n} / {total}" };
+export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}" };
 
 /** cors: a cross-origin photo without CORS headers; load: the photo did not load; webgl: no WebGL (only when
  *  renderer is "webgl"); shader: the effect did not compile (message has the log). */
-export type UnfurlError = { index: number; src: string; reason: "cors" | "load" | "webgl" | "shader"; fallback: "css" | "none"; message?: string };
+export type UnfurlError = { index: number; src: string; reason: "cors" | "load" | "webgl" | "shader" | "media"; fallback: "css" | "none"; message?: string };
+/** Why the lightbox closed: the person or close() ("close"), or destroy() ("destroy"). */
+export type CloseReason = "close" | "destroy";
 
 export type UnfurlHooks = {
   onOpenStart?: (d: { index: number }) => void;
   onOpenEnd?: (d: { index: number; renderer: "webgl" | "css" }) => void;
-  onCloseStart?: (d: { index: number }) => void;
-  onCloseEnd?: (d: { index: number }) => void;
+  /** Also fired by destroy() while open, with reason "destroy". */
+  onCloseStart?: (d: { index: number; reason: CloseReason }) => void;
+  onCloseEnd?: (d: { index: number; reason: CloseReason }) => void;
   onChange?: (index: number, d: { index: number; from: number; how: MoveHow }) => void;
   onAnimationStart?: (d: { type: AnimationType; index: number }) => void;
-  onAnimationEnd?: (d: { type: AnimationType; index: number }) => void;
+  /** cancelled is true when destroy() cut the animation short. */
+  onAnimationEnd?: (d: { type: AnimationType; index: number; cancelled?: boolean }) => void;
   onError?: (d: UnfurlError) => void;
 };
 
 export type UnfurlOptions = UnfurlHooks & {
-  /** The photos, in order. Strings are taken as `src`. Full-size sources; same-origin or CORS-enabled for WebGL. */
-  photos: (UnfurlPhoto | string)[];
+  /** The photos (and videos), in order. Strings are taken as image `src`. Full-size sources; same-origin or
+   *  CORS-enabled for WebGL. */
+  photos: (UnfurlItem | string)[];
+  /** Extra buttons in the top bar, before Close, inside the focus trap. */
+  topActions?: UnfurlAction[];
+  /** Your own controls: called once with a host element in the top bar (before Close, inside the focus trap).
+   *  Return a function to tidy up; it runs when the lightbox leaves the page. */
+  controls?: (host: HTMLElement, api: UnfurlApi) => void | (() => void);
   /** The photo to open on. Default 0. */
   start?: number;
   /** Where photo i sits on the page now: an element or a rect. Null (or off screen) means it fades instead. */
@@ -73,9 +115,16 @@ export type UnfurlOptions = UnfurlHooks & {
   announce?: boolean;
   /** Hide the origin element while its photo is out, so it looks lifted. Default true. */
   hideOrigin?: boolean;
-  /** Corner radius of the photo in its spot, and open, in CSS px. Defaults 16 and 12. */
-  radius?: number;
-  openRadius?: number;
+  /** Corner radius of the photo in its spot, in CSS px: one number, four ([top left, top right, bottom right,
+   *  bottom left]), or a function of the photo's index for grids whose tiles differ. Default 16. */
+  radius?: Radius | ((i: number) => Radius);
+  /** Corner radius when open: one number or four. Default 12. */
+  openRadius?: Radius;
+  /** Pinch, double tap (or double click) and Ctrl or trackpad pinch to zoom; drag to pan when zoomed. Default
+   *  true. { max } sets the largest zoom (default 4). */
+  zoom?: boolean | { max?: number };
+  /** Your own icons (next, prev, close, play), as the d of a 24px stroked path. */
+  icons?: Icons;
   /** Where the dialog mounts, and where its events are dispatched. Default document.body. */
   container?: HTMLElement;
 };
@@ -91,7 +140,7 @@ export type Unfurl = {
   show(i: number): void;
   /** Close, springing back to the spot. */
   close(): void;
-  /** Remove at once, without animating. */
+  /** Remove at once, without animating. Fires onCloseStart and onCloseEnd with reason "destroy" if still open. */
   destroy(): void;
 };
 
@@ -99,7 +148,11 @@ type Phase = "opening" | "open" | "closing" | "closed";
 
 /** Open the lightbox. It closes itself (Escape, the close button, a tap, or a pull down). */
 export function unfurl(options: UnfurlOptions): Unfurl {
-  const photos = options.photos.map((p) => (typeof p === "string" ? { src: p } : p));
+  const photos: UnfurlItem[] = options.photos.map((p) => (typeof p === "string" ? { src: p } : p));
+  const isVideo = (p: UnfurlItem): p is UnfurlVideo => p.type === "video";
+  const imageOf = (p: UnfurlItem) => (isVideo(p) ? p.poster : p.src);
+  const sourceOf = (p: UnfurlItem) => (isVideo(p) ? { src: p.poster } : { src: p.src, srcset: p.srcset, sizes: p.sizes, placeholder: p.placeholder });
+  const ic = options.icons ?? {};
   const n = photos.length;
   const L: UnfurlLabels = { ...UNFURL_LABELS, ...(options.label ? { dialog: options.label } : {}), ...options.labels };
   const still = resolveReduced(options.reducedMotion, systemReduces());
@@ -110,6 +163,15 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const container = options.container ?? document.body;
   const before = document.activeElement as HTMLElement | null;
   const emit = emitter(options, () => container);
+  // Every animation start gets exactly one end, even when destroy() cuts it short.
+  const pending: AnimationType[] = [];
+  const animStart = (type: AnimationType, i: number) => { pending.push(type); emit("onAnimationStart", { type, index: i }); };
+  const animEnd = (type: AnimationType, i: number, cancelled = false) => {
+    const k = pending.indexOf(type);
+    if (k < 0) return;
+    pending.splice(k, 1);
+    emit("onAnimationEnd", cancelled ? { type, index: i, cancelled } : { type, index: i });
+  };
   let index = Math.min(n - 1, Math.max(0, options.start ?? 0));
   let phase = "opening" as Phase;
 
@@ -124,14 +186,17 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const count = el("span", "fk-unfurl-n", { "aria-hidden": "true" });
   const status = el("span", "fk-sr", announce ? { "aria-live": "polite", "aria-atomic": "true" } : {});
   const closeBtn = el("button", "fk-unfurl-btn fk-unfurl-close", { type: "button", "aria-label": L.close });
-  closeBtn.append(icon(CROSS, 18));
-  top.append(count, status, closeBtn);
+  closeBtn.append(icon(ic.close ?? CROSS, 18));
+  const actions = el("div", "fk-unfurl-actions");
+  top.append(count, status, actions, closeBtn);
+  const media = el("div", "fk-unfurl-media");
+  media.hidden = true;
   const prevBtn = el("button", "fk-unfurl-btn fk-unfurl-prev", { type: "button", "aria-label": L.previous });
   const nextBtn = el("button", "fk-unfurl-btn fk-unfurl-next", { type: "button", "aria-label": L.next });
-  prevBtn.append(icon(CHEVRON, 18));
-  nextBtn.append(icon(CHEVRON, 18));
+  prevBtn.append(icon(ic.prev ?? CHEVRON_LEFT, 18));
+  nextBtn.append(icon(ic.next ?? CHEVRON, 18));
   const cap = el("p", "fk-unfurl-cap");
-  root.append(bg, canvas, cssHost, top);
+  root.append(bg, canvas, cssHost, media, top);
   if (n > 1) root.append(prevBtn, nextBtn);
   root.append(cap);
 
@@ -143,7 +208,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     prevBtn.setAttribute("aria-disabled", String(nb.prev === null));
     nextBtn.setAttribute("aria-disabled", String(nb.next === null));
     count.textContent = fill(L.counter, v);
-    if (announce) status.textContent = fill(L.position, v) + (p.alt ? `. ${p.alt}` : "");
+    if (announce) status.textContent = fill(isVideo(p) ? L.videoPosition : L.position, v) + (p.alt ? `. ${p.alt}` : "");
     cap.textContent = p.caption ?? "";
     cap.hidden = !p.caption;
   };
@@ -188,7 +253,9 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   // ---------- Renderers ----------
   const ctx: StageCtx = {
-    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480, count: n, loop,
+    still,
+    rSpot: (i: number) => toR4(typeof options.radius === "function" ? options.radius(i) : options.radius, 16),
+    rOpen: toR4(options.openRadius, 12), duration: effect.duration ?? 480, count: n, loop,
     // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
     // areas, which the overlay carries as padding.
     area: () => {
@@ -203,17 +270,17 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
   let stage: Stage | null = null;
   if (wantGl) {
-    const built = createGlStage(canvas, photos.map((p) => p.src), effect, ctx);
+    const built = createGlStage(canvas, photos.map(sourceOf), effect, ctx);
     if (built.stage) stage = built.stage;
     // A shader that does not compile is always reported; missing WebGL only when WebGL was asked for by name.
     else if (built.error.reason === "shader" || options.renderer === "webgl") {
       const err = built.error;
-      queueMicrotask(() => emit("onError", { index, src: photos[index].src, reason: err.reason, fallback: "css", message: err.message } satisfies UnfurlError));
+      queueMicrotask(() => emit("onError", { index, src: imageOf(photos[index]), reason: err.reason, fallback: "css", message: err.message } satisfies UnfurlError));
     }
   }
   const useCss = () => {
     stage?.destroy();
-    stage = createCssStage(cssHost, photos, effect.css ?? "fade", ctx);
+    stage = createCssStage(cssHost, photos.map(sourceOf), effect.css ?? "fade", ctx);
     root.dataset.renderer = "css";
     return stage;
   };
@@ -223,31 +290,109 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const fallBack = async (i: number) => {
     const s = useCss();
     const ok = await s.open(i, null, () => hide(i));
-    emit("onError", { index: i, src: photos[i].src, reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
+    emit("onError", { index: i, src: imageOf(photos[i]), reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
     return ok;
   };
+
+  // ---------- Video slides: a play button over the poster, the player only after a tap ----------
+  let mediaFor = -1;
+  const hideMedia = () => {
+    if (mediaFor === -1 && media.hidden) return;
+    mediaFor = -1;
+    // Removing the player stops it.
+    media.replaceChildren();
+    media.hidden = true;
+  };
+  const placeMedia = () => {
+    const r = stage?.rect();
+    if (!r) return false;
+    Object.assign(media.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: ctx.rOpen.map((x) => `${x}px`).join(" ") });
+    return true;
+  };
+  const showMedia = () => {
+    const p = photos[index];
+    if (!isVideo(p) || mediaFor === index || phase !== "open") return;
+    if (!placeMedia()) return;
+    mediaFor = index;
+    media.replaceChildren();
+    media.hidden = false;
+    const play = el("button", "fk-unfurl-play", { type: "button", "aria-label": p.title ? `${L.play}: ${p.title}` : L.play });
+    play.append(icon(ic.play ?? PLAY, 26));
+    play.addEventListener("click", () => playMedia(p));
+    media.append(play);
+  };
+  const playMedia = (p: UnfurlVideo) => {
+    const url = embedUrl(p.provider, p.src);
+    if (!url) {
+      emit("onError", { index, src: p.src, reason: "media", fallback: "none", message: `not a usable ${p.provider} source` } satisfies UnfurlError);
+      return;
+    }
+    let player: HTMLElement;
+    if (p.provider === "mp4") {
+      const v = el("video", "fk-unfurl-player", { controls: "", playsinline: "", preload: "auto", poster: p.poster });
+      v.src = url;
+      v.autoplay = true;
+      v.addEventListener("error", () => emit("onError", { index, src: p.src, reason: "media", fallback: "none", message: "the video did not load" } satisfies UnfurlError), { once: true });
+      player = v;
+    } else {
+      // Sandboxed, no referrer path, and only the abilities a player needs.
+      player = el("iframe", "fk-unfurl-player", {
+        src: url,
+        title: p.title || p.alt || L.play,
+        allow: "autoplay; encrypted-media; picture-in-picture; fullscreen",
+        allowfullscreen: "",
+        referrerpolicy: "strict-origin-when-cross-origin",
+        sandbox: "allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox",
+      });
+    }
+    media.replaceChildren(player);
+    player.focus({ preventScroll: true });
+  };
+
+  // ---------- Your controls: actions and a host for anything else, before Close ----------
+  const api: UnfurlApi = {
+    get index() { return index; },
+    get item() { return photos[index]; },
+    close: () => close(),
+    next: () => move(1, "api"),
+    prev: () => move(-1, "api"),
+    show: (i: number) => show(i, "api"),
+  };
+  for (const a of options.topActions ?? []) {
+    const b = el("button", a.icon ? "fk-unfurl-btn fk-unfurl-act" : "fk-unfurl-action", { type: "button" });
+    if (a.icon) { b.setAttribute("aria-label", a.label); b.append(icon(a.icon, 18)); } else b.textContent = a.label;
+    b.addEventListener("click", () => a.onClick(api));
+    actions.append(b);
+  }
+  let cleanupControls: (() => void) | void;
+  if (options.controls) {
+    const host = el("div", "fk-unfurl-controls");
+    actions.append(host);
+    cleanupControls = options.controls(host, api);
+  }
 
   // ---------- Open ----------
   container.append(root);
   closeBtn.focus({ preventScroll: true });
   emit("onOpenStart", { index });
-  emit("onAnimationStart", { type: "open", index });
+  animStart("open", index);
   void (async () => {
     const from = spot(index).box;
     const s = stage!;
     let ok = await s.open(index, from, () => hide(index));
     if (phase === "closed") return;
     if (!ok && s.kind === "webgl") ok = await fallBack(index);
-    else if (!ok) emit("onError", { index, src: photos[index].src, reason: "load", fallback: "none" } satisfies UnfurlError);
-    if (phase !== "opening") return;
+    else if (!ok) emit("onError", { index, src: imageOf(photos[index]), reason: "load", fallback: "none" } satisfies UnfurlError);
+    if (phase !== "opening") { animEnd("open", index); return; }
     setPhase("open");
-    emit("onAnimationEnd", { type: "open", index });
+    animEnd("open", index);
     emit("onOpenEnd", { index, renderer: stage!.kind });
+    showMedia();
   })();
 
   // Re-fit when the window or the visual viewport changes (Safari's toolbars, rotation); the photo springs there.
   let fitFrame = 0;
-  const onResize = () => { cancelAnimationFrame(fitFrame); fitFrame = requestAnimationFrame(() => stage?.resize()); };
+  const onResize = () => { cancelAnimationFrame(fitFrame); fitFrame = requestAnimationFrame(() => { stage?.resize(); if (!media.hidden) placeMedia(); }); };
   window.addEventListener("resize", onResize);
   window.visualViewport?.addEventListener("resize", onResize);
 
@@ -258,16 +403,20 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     const next = ((to % n) + n) % n;
     if (next === index) return;
     const from = index, d = dir ?? (next > from ? 1 : -1);
+    const plain = isVideo(photos[from]) || isVideo(photos[next]);
+    hideMedia();
+    root.dataset.zoomed = "false";
     index = next;
     label();
     hide(next);
     emit("onChange", { index: next, from, how }, next, { index: next, from, how });
-    emit("onAnimationStart", { type: "change", index: next });
+    animStart("change", next);
     const s = stage!;
-    void s.show(next, d).then(async (ok) => {
+    void s.show(next, d, plain).then(async (ok) => {
       if (!ok && phase !== "closed" && s.kind === "webgl" && stage === s) await fallBack(next);
-      else if (!ok && phase !== "closed") emit("onError", { index: next, src: photos[next].src, reason: "load", fallback: "none" } satisfies UnfurlError);
-      emit("onAnimationEnd", { type: "change", index: next });
+      else if (!ok && phase !== "closed") emit("onError", { index: next, src: imageOf(photos[next]), reason: "load", fallback: "none" } satisfies UnfurlError);
+      animEnd("change", next);
+      if (phase === "open" && index === next) showMedia();
     });
   };
   const move = (d: 1 | -1, how: MoveHow) => show(index + d, how, d);
@@ -276,18 +425,22 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const close = () => {
     if (phase === "closing" || phase === "closed") return;
     setPhase("closing");
-    emit("onCloseStart", { index });
-    emit("onAnimationStart", { type: "close", index });
+    hideMedia();
+    emit("onCloseStart", { index, reason: "close" });
+    animStart("close", index);
     void stage!.close(spot(index).box).then(() => {
       if (phase === "closed") return;
       teardown();
-      emit("onAnimationEnd", { type: "close", index });
-      emit("onCloseEnd", { index });
+      animEnd("close", index);
+      emit("onCloseEnd", { index, reason: "close" });
     });
   };
 
   const teardown = () => {
     setPhase("closed");
+    cancelTap();
+    hideMedia();
+    try { cleanupControls?.(); } catch (e) { setTimeout(() => { throw e; }); }
     window.removeEventListener("resize", onResize);
     window.visualViewport?.removeEventListener("resize", onResize);
     cancelAnimationFrame(fitFrame);
@@ -305,6 +458,8 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const ring = (b: HTMLElement) => { if (b.offsetParent !== null && root.contains(document.activeElement)) b.focus({ preventScroll: true }); };
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    // A playing <video> keeps its own arrow keys (seek); Escape still closes.
+    if (e.key !== "Escape" && e.key !== "Tab" && (e.target as Element)?.closest?.("video")) return;
     const act = lightboxKey(e.key);
     if (act) {
       e.preventDefault();
@@ -313,8 +468,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
       else if (act === "prev") { move(-1, "key"); ring(prevBtn); }
       else if (act === "first") show(0, "key", -1);
       else show(n - 1, "key", 1);
+    } else if ((e.key === "+" || e.key === "=" || e.key === "-") && canZoom()) {
+      // + and - zoom about the middle of the photo.
+      e.preventDefault();
+      const r = stage?.current();
+      if (r) zoomAt(r.x + r.w / 2, r.y + r.h / 2, e.key === "-" ? 1 / 1.5 : 1.5);
     } else if (e.key === "Tab" && trap) {
-      const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href]")).filter((b) => !b.hidden && b.offsetParent !== null);
+      const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href], iframe, video[controls], [tabindex]:not([tabindex='-1'])")).filter((b) => !b.hidden && b.offsetParent !== null);
       e.preventDefault();
       if (!f.length) return;
       const i = f.indexOf(document.activeElement as HTMLElement);
@@ -330,8 +490,39 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   // Gestures. While the finger is down the photo follows it 1:1 (sideways to change photo, down to close, up with
   // resistance); the backdrop fades with the pull. On release the spring takes over with the finger's velocity:
   // it moves, closes or settles back. The photo can be caught at any point, even mid-animation.
-  type Drag = { id: number; x: number; y: number; px: number; axis: "x" | "y" | null; samples: { x: number; y: number; t: number }[] };
+  // Zoom: two fingers pinch toward their midpoint; a double tap (or double click) zooms in at the point or back
+  // out; Ctrl or trackpad pinch on the wheel zooms at the pointer. While zoomed one finger pans, with momentum,
+  // and the photo always covers the view.
+  const zoomOn = options.zoom !== false;
+  const zoomMax = typeof options.zoom === "object" && options.zoom.max ? Math.max(1.5, options.zoom.max) : 4;
+  const canZoom = () => zoomOn && !isVideo(photos[index]) && phase === "open";
+  const view = (): Box => ({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
+  const zoomedNow = () => isZoomed(stage?.current() ?? null, stage?.rect() ?? null);
+  const zoomTo = (box: Box, v = { vx: 0, vy: 0 }) => {
+    const s = stage, rest = s?.rect();
+    if (!s || !rest) return;
+    const target = settleZoom(box, rest, zoomMax, view());
+    root.dataset.zoomed = String(isZoomed(target, rest));
+    void s.glide(target, v);
+  };
+  const zoomAt = (x: number, y: number, factor: number) => {
+    const cur = stage?.current(), rest = stage?.rect();
+    if (!cur || !rest) return;
+    const s = Math.min(zoomMax, Math.max(1, (cur.w * factor) / rest.w)) / (cur.w / rest.w);
+    zoomTo(zoomAbout(cur, s, { x, y }, { x, y }));
+  };
+  const toggleZoom = (x: number, y: number) => {
+    const rest = stage?.rect();
+    if (!rest) return;
+    if (zoomedNow()) zoomTo(rest);
+    else zoomTo(zoomAbout(rest, Math.min(2.5, zoomMax), { x, y }, { x, y }));
+  };
+
+  type Drag = { id: number; x: number; y: number; px: number; axis: "x" | "y" | "pan" | null; box0: Box | null; samples: { x: number; y: number; t: number }[] };
   let drag: Drag | null = null;
+  const pointers = new Map<number, { x: number; y: number }>();
+  let pinch: { d0: number; m0: { x: number; y: number }; box0: Box } | null = null;
+  let afterPinch = false;
   const pull = (dy: number) => Math.min(1, Math.max(0, dy) / (window.innerHeight * 0.5));
   // The strip's width is read once per drag, at the first move, never per frame.
   let stripW = 0;
@@ -340,29 +531,80 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const slide = (dir: -1 | 0 | 1, vx: number) => {
     stripW = 0;
     const s = stage!;
-    if (dir === 0) { void s.settle(0, vx); return; }
+    if (dir === 0) { void s.settle(0, vx).then(() => { if (phase === "open") showMedia(); }); return; }
     const from = index, next = neighbours(index, n, loop)[dir > 0 ? "next" : "prev"]!;
+    hideMedia();
     index = next;
     label();
     hide(next);
+    root.dataset.zoomed = "false";
     emit("onChange", { index: next, from, how: "swipe" }, next, { index: next, from, how: "swipe" });
-    emit("onAnimationStart", { type: "change", index: next });
-    void s.settle(dir, vx).then(() => emit("onAnimationEnd", { type: "change", index: next }));
+    animStart("change", next);
+    void s.settle(dir, vx).then(() => { animEnd("change", next); if (phase === "open" && index === next) showMedia(); });
+  };
+  // Abandon a one-finger drag (a second finger arrived): put things back as they were.
+  const dropDrag = () => {
+    const d = drag;
+    drag = null;
+    if (!d) return;
+    bg.style.transition = ""; bg.style.opacity = "";
+    delete root.dataset.swiping;
+    if (d.axis === "x") stage?.settle(0, 0);
+    else if (d.axis === "y") stage?.release({ vx: 0, vy: 0 });
   };
   root.addEventListener("pointerdown", (e) => {
-    if (drag || !e.isPrimary || (e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: 0, axis: null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
+    if ((e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+    if (pointers.size === 2 && canZoom()) {
+      const cur = stage?.current();
+      dropDrag();
+      if (!cur) return;
+      const [a, b] = [...pointers.values()];
+      pinch = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, box0: cur };
+      cancelTap();
+      return;
+    }
+    if (drag || pinch || pointers.size > 1) return;
+    const pan = canZoom() && zoomedNow();
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: 0, axis: pan ? "pan" : null, box0: pan ? stage!.current() : null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
   });
   root.addEventListener("pointermove", (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size >= 2 && stage) {
+      const [a, b] = [...pointers.values()];
+      const rest = stage.rect();
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      let s = Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0;
+      // Past the limits the pinch resists.
+      if (rest) {
+        const z = (pinch.box0.w * s) / rest.w;
+        if (z < 1) s = (rest.w * (1 - rubber(1 - z, 0.5))) / pinch.box0.w;
+        else if (z > zoomMax) s = (rest.w * (zoomMax + rubber(z - zoomMax, 1))) / pinch.box0.w;
+      }
+      hideMedia();
+      stage.place(zoomAbout(pinch.box0, s, pinch.m0, m));
+      return;
+    }
     const d = drag;
     if (!d || e.pointerId !== d.id || !stage) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     d.samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (d.samples.length > 8) d.samples.shift();
+    if (d.axis === "pan" && d.box0) {
+      // Pan a zoomed photo 1:1; past its edges it resists.
+      const want = { ...d.box0, x: d.box0.x + dx, y: d.box0.y + dy };
+      const rest = stage.rect()!;
+      const ok = clampPan(want, rest, view());
+      const over = (a: number, b: number) => b + Math.sign(a - b) * rubber(Math.abs(a - b), 80);
+      stage.place({ ...want, x: over(want.x, ok.x), y: over(want.y, ok.y) });
+      if (Math.hypot(dx, dy) > 6) cancelTap();
+      return;
+    }
     if (!d.axis) {
       d.axis = lockAxis(dx, dy);
       if (!d.axis) return;
+      cancelTap();
     }
     if (d.axis === "x") {
       // The strip follows the finger 1:1; past the first or last photo it resists.
@@ -370,15 +612,39 @@ export function unfurl(options: UnfurlOptions): Unfurl {
       const open = dx < 0 ? nb.next !== null : nb.prev !== null;
       d.px = open ? dx : Math.sign(dx) * rubber(Math.abs(dx), stripWidth() * 0.25);
       root.dataset.swiping = "true";
+      hideMedia();
       stage.pan(d.px);
     } else {
       const p = pull(dy);
+      hideMedia();
       stage.track({ x: dx * 0.5, y: dy > 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p });
       bg.style.transition = "none";
       bg.style.opacity = String(1 - p * 0.75);
     }
   });
+
+  // Taps: with zoom on, a single tap waits a moment for a second; two make a double tap.
+  let tap: { t: number; x: number; y: number; timer: number } | null = null;
+  const cancelTap = () => { if (tap) { clearTimeout(tap.timer); tap = null; } };
+  const onTap = (x: number, y: number, t: number) => {
+    if (!canZoom()) { close(); return; }
+    if (tap && t - tap.t < 300 && Math.hypot(x - tap.x, y - tap.y) < 40) { cancelTap(); toggleZoom(x, y); return; }
+    cancelTap();
+    tap = { t, x, y, timer: window.setTimeout(() => { tap = null; if (!zoomedNow()) close(); }, 300) };
+  };
+
   const end = (e: PointerEvent, cancelled: boolean) => {
+    pointers.delete(e.pointerId);
+    if (pinch) {
+      if (pointers.size < 2) {
+        pinch = null;
+        afterPinch = true;
+        const cur = stage?.current();
+        if (cur) zoomTo(cur);
+      }
+      return;
+    }
+    if (afterPinch) { if (!pointers.size) afterPinch = false; return; }
     const d = drag;
     if (!d || e.pointerId !== d.id) return;
     drag = null;
@@ -390,6 +656,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     bg.style.transition = "";
     bg.style.opacity = "";
     delete root.dataset.swiping;
+    if (d.axis === "pan") {
+      if (Math.hypot(dx, dy) < 6 && !cancelled) { onTap(e.clientX, e.clientY, e.timeStamp); return; }
+      // Momentum: project where the pan would coast to, keep it covering the view, and spring there.
+      const cur = stage?.current();
+      if (cur) zoomTo({ ...cur, x: cur.x + project(v.vx) * 0.35, y: cur.y + project(v.vy) * 0.35 }, v);
+      return;
+    }
     if (d.axis === "x") {
       // Project where the fling would stop, take the nearest photo, and spring there with the finger's velocity.
       const nb = neighbours(index, n, loop);
@@ -399,8 +672,15 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     }
     const intent = cancelled ? null : d.axis === "y" ? swipeIntent(0, dy, 0, v.vy) : swipeIntent(dx, dy, v.vx, v.vy);
     if (d.axis) stage?.release(v);
-    if (intent === "close" || (intent === "tap" && !d.axis)) close();
+    if (intent === "close") close();
+    else if (intent === "tap" && !d.axis) onTap(e.clientX, e.clientY, e.timeStamp);
   };
+  // Ctrl + wheel (and trackpad pinch, which browsers send as Ctrl + wheel) zooms at the pointer.
+  root.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey || !canZoom()) return;
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+  }, { passive: false });
   // iOS and Android: never let a touch on the overlay become a browser pan or zoom. A pan would scroll the page
   // behind and fire pointercancel, which is what made sideways swipes fail. Taps and pointer events still work.
   const noPan = (e: TouchEvent) => { if (e.cancelable) e.preventDefault(); };
@@ -415,6 +695,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     prev: () => move(-1, "api"),
     show: (i: number) => show(i, "api"),
     close,
-    destroy: () => { if (phase !== "closed") teardown(); },
+    destroy: () => {
+      if (phase === "closed") return;
+      // Tidy-up hooks still fire, so apps can reset their state.
+      if (phase !== "closing") emit("onCloseStart", { index, reason: "destroy" });
+      for (const t of [...pending].reverse()) animEnd(t, index, true);
+      teardown();
+      emit("onCloseEnd", { index, reason: "destroy" });
+    },
   };
 }

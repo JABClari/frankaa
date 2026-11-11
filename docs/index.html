@@ -464,7 +464,7 @@ const mountCard = ([where, title, sub, ids], k) => {
   $(where).append(art);
   const make = () => {
     const slider = procession(box, {
-      photos: ids.map(small), label: title, priority: k === 0,
+      photos: ids.map(small), label: title, priority: k === 0, zoomCursor: true,
       loop: S.loop, autoplay: S.autoplay ? 3000 : false, reducedMotion: S.motion,
       onSelect: (i) => lightbox(ids.map(full), i, (n) => slider.image(n), { label: title, radius: 12, onChange: (n) => slider.go(n, false) }),
     });

@@ -5,9 +5,9 @@
 // - Photos are decoded (img.decode()) before they are shown, and the neighbours are loaded and decoded ahead.
 // - Layout is read only when a layer is placed or the window resizes, never inside an animation frame, and
 //   will-change is set only while something moves.
-import { containBox, draggedBox, flipFrame, neighbours, radiusAt, stepBox, stripStep, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
+import { containBox, draggedBox, flipFrame, neighbours, radiusAt, stepBox, stripStep, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
 import type { CssTransition } from "./effects";
-import { el } from "./dom";
+import { el, placeholderStyle } from "./dom";
 
 const FADE_MS = 160;
 const UI_MAX_MS = 300;
@@ -15,7 +15,9 @@ const EASE_OUT = "cubic-bezier(.23, 1, .32, 1)";
 
 type Layer = { i: number; frame: HTMLDivElement; img: HTMLImageElement; rest: Box; aspect: number };
 
-export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: string }[], transition: CssTransition, ctx: StageCtx): Stage {
+export type CssSource = { src: string; srcset?: string; sizes?: string; placeholder?: string };
+
+export function createCssStage(host: HTMLElement, srcs: CssSource[], transition: CssTransition, ctx: StageCtx): Stage {
   let cur: Layer | null = null;
   let token = 0;
   let dead = false;
@@ -31,6 +33,8 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
         const frame = el("div", "fk-unfurl-frame");
         const img = el("img", "fk-unfurl-img", { alt: "", decoding: "async", draggable: "false" });
         frame.append(img);
+        placeholderStyle(frame, srcs[i].placeholder);
+        if (srcs[i].srcset) { img.sizes = srcs[i].sizes || "100vw"; img.srcset = srcs[i].srcset!; }
         img.src = srcs[i].src;
         const done = () => resolve({ i, frame, img, aspect: img.naturalWidth / Math.max(1, img.naturalHeight) || 1.5, rest: { x: 0, y: 0, w: 1, h: 1 } });
         const wait = typeof img.decode === "function" ? img.decode() : new Promise<void>((r, j) => { img.onload = () => r(); img.onerror = j; });
@@ -44,8 +48,9 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
     l.rest = containBox(l.aspect, area);
     const s = l.frame.style;
     s.left = `${l.rest.x}px`; s.top = `${l.rest.y}px`; s.width = `${l.rest.w}px`; s.height = `${l.rest.h}px`;
-    s.borderRadius = `${ctx.rOpen}px`;
+    s.borderRadius = css(ctx.rOpen);
   };
+  const css = (r: R4, sx = 1, sy = 1) => `${r[0] / sx}px ${r[1] / sx}px ${r[2] / sx}px ${r[3] / sx}px / ${r[0] / sy}px ${r[1] / sy}px ${r[2] / sy}px ${r[3] / sy}px`;
   const attach = (l: Layer, hidden: boolean) => {
     if (!l.frame.isConnected) host.append(l.frame);
     place(l);
@@ -70,12 +75,12 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
   };
 
   // ---------- Painting ----------
-  const paint = (l: Layer, box: Box, r: number, dx: number) => {
+  const paint = (l: Layer, box: Box, r: R4, dx: number) => {
     const f = flipFrame(box, l.rest);
     l.frame.style.transform = `translate3d(${f.tx + dx}px, ${f.ty}px, 0) scale(${f.sx}, ${f.sy})`;
     l.img.style.transform = `scale(${f.ix}, ${f.iy})`;
     // The radius is divided back out of the scale so the corners stay round.
-    l.frame.style.borderRadius = `${r / f.sx}px / ${r / f.sy}px`;
+    l.frame.style.borderRadius = css(r, f.sx, f.sy);
   };
   const paintNeighbours = () => {
     if (!cur) return;
@@ -91,7 +96,7 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
   };
   const rest = (l: Layer) => {
     l.frame.style.transform = l.img.style.transform = l.frame.style.willChange = l.img.style.willChange = "";
-    l.frame.style.borderRadius = `${ctx.rOpen}px`;
+    l.frame.style.borderRadius = css(ctx.rOpen);
   };
   const fade = (node: HTMLElement, frames: Keyframe[], ms: number) => new Promise<void>((resolve) => {
     if (typeof node.animate !== "function" || ms <= 0) { resolve(); return; }
@@ -123,11 +128,17 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
         if (Math.abs(strip.x) < 0.25 && Math.abs(strip.v) < 2) { strip.x = 0; strip.v = 0; } else moving = true;
       }
     }
-    paint(l, sp.box, radiusAt(sp.closing, sp.box, sp.target, ctx.rSpot, ctx.rOpen), strip.x);
+    paint(l, sp.box, radiusAt(sp.closing, sp.box, sp.target, ctx.rSpot(l.i), ctx.rOpen), strip.x);
     paintNeighbours();
     if (moving) { raf = requestAnimationFrame(frame); return; }
     raf = 0; last = 0;
-    if (!sp.closing) rest(l);
+    // At rest: back to plain layout when open at its size; when zoomed keep the transform but drop will-change,
+    // so the browser redraws the photo sharp at its zoomed size.
+    if (!sp.closing) {
+      const r = l.rest, b = sp.box;
+      if (Math.abs(b.w - r.w) < 0.5 && Math.abs(b.x - r.x) < 0.5 && Math.abs(b.y - r.y) < 0.5) rest(l);
+      else l.frame.style.willChange = l.img.style.willChange = "";
+    }
     const w = waiters; waiters = [];
     w.forEach((f) => f());
   };
@@ -150,17 +161,34 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
       cur = l;
       started?.();
       if (ctx.still || !from) {
+        sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0];
         await fade(l.frame, [{ opacity: 0, transform: ctx.still ? "none" : "scale(.96)" }, { opacity: 1, transform: "none" }], ctx.still ? FADE_MS : 220);
         l.frame.getAnimations?.().forEach((a) => a.cancel());
       } else {
         sp.box = { ...from }; sp.vel = [0, 0, 0, 0]; sp.target = l.rest; sp.closing = false; springing = true;
-        paint(l, sp.box, ctx.rSpot, 0);
+        paint(l, sp.box, ctx.rSpot(i), 0);
         await run();
       }
       prefetch(i);
       return true;
     },
-    async show(i, dir) {
+    rect() { return cur ? { ...cur.rest } : null; },
+    current() { return cur ? { ...sp.box } : null; },
+    place(box) {
+      const l = cur;
+      if (!l || dead) return;
+      held = true;
+      sp.box = { ...box }; sp.vel = [0, 0, 0, 0];
+      l.frame.style.willChange = l.img.style.willChange = "transform";
+      if (!raf) paint(l, sp.box, ctx.rOpen, strip.x);
+    },
+    async glide(box, v) {
+      held = false;
+      if (!cur) return;
+      sp.target = { ...box }; sp.vel = [v.vx, v.vy, 0, 0]; springing = true;
+      await run();
+    },
+    async show(i, dir, plain) {
       const t = ++token;
       const l = await layer(i);
       if (dead) return true;
@@ -171,6 +199,7 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
       attach(l, false);
       near.delete(i);
       cur = l;
+      if (!moved) { sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0]; springing = false; }
       if (old && old !== l) { old.frame.style.visibility = ""; }
       const ms = ctx.still ? FADE_MS : Math.min(UI_MAX_MS, ctx.duration);
       if (moved && old && old !== l) {
@@ -181,7 +210,7 @@ export function createCssStage(host: HTMLElement, srcs: { src: string; alt?: str
         paint(l, sp.box, ctx.rOpen, 0);
         await Promise.all([fade(l.frame, [{ opacity: 0 }, { opacity: 1 }], ms), fade(old.frame, [{ opacity: 1 }, { opacity: 0 }], ms), run()]);
       } else {
-        const kind = ctx.still ? "fade" : transition;
+        const kind = ctx.still || plain ? "fade" : transition;
         if (kind !== "none" && ms > 0 && old && old !== l) {
           const x = `${dir * 4}%`;
           const inFrom = kind === "slide" ? `translate3d(${x}, 0, 0)` : kind === "zoom" ? "scale(1.04)" : "none";

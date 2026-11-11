@@ -76,10 +76,17 @@ export function stepBox(box: Box, vel: number[], target: Box, dt: number, cfg: S
   return moving;
 }
 
-/** The corner radius on the way: it follows how far the box still has to go (open: spot radius to open radius). */
-export function radiusAt(closing: boolean, box: Box, target: Box, rSpot: number, rOpen: number): number {
+/** Corner radii, top left, top right, bottom right, bottom left (CSS order). */
+export type R4 = [number, number, number, number];
+/** One radius for every corner, or four. */
+export type Radius = number | R4;
+export const toR4 = (r: Radius | undefined, fallback: number): R4 => (Array.isArray(r) ? [r[0], r[1], r[2], r[3]] : [r ?? fallback, r ?? fallback, r ?? fallback, r ?? fallback]);
+
+/** The corner radii on the way: they follow how far the box still has to go (open: spot radii to open radii). */
+export function radiusAt(closing: boolean, box: Box, target: Box, rSpot: R4, rOpen: R4): R4 {
   const left = Math.min(1, Math.abs(box.w - target.w) / Math.max(1, target.w));
-  return closing ? rOpen + (rSpot - rOpen) * (1 - left) : rOpen + (rSpot - rOpen) * left;
+  const k = closing ? 1 - left : left;
+  return rOpen.map((o, j) => o + (rSpot[j] - o) * k) as R4;
 }
 
 /**
@@ -99,13 +106,22 @@ export function pickRenderer(pref: RendererPref | undefined, webgl: boolean): "w
 }
 
 /** What both renderers share with the lightbox. */
-export type StageCtx = { still: boolean; rSpot: number; rOpen: number; duration: number; area: () => Box; count: number; loop: boolean };
+export type StageCtx = { still: boolean; rSpot: (i: number) => R4; rOpen: R4; duration: number; area: () => Box; count: number; loop: boolean };
 export type Stage = {
   kind: "webgl" | "css";
   /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
   open(i: number, from: Box | null, started?: () => void): Promise<boolean>;
-  /** Move to photo i. Resolves false when it cannot be shown. */
-  show(i: number, dir: 1 | -1): Promise<boolean>;
+  /** Move to photo i. plain: a short crossfade instead of the effect (used when a video is involved). Resolves
+   *  false when it cannot be shown. */
+  show(i: number, dir: 1 | -1, plain?: boolean): Promise<boolean>;
+  /** Where the current photo rests when open (for laying a video player over it). */
+  rect(): Box | null;
+  /** Where the current photo is drawn now. */
+  current(): Box | null;
+  /** Zoom and pan, while fingers are down: draw the current photo at this box, 1:1, no spring. */
+  place(box: Box): void;
+  /** Zoom and pan, after release: spring the current photo to this box, carrying velocity v (px/s). */
+  glide(box: Box, v: { vx: number; vy: number }): Promise<void>;
   /** Spring back to `to` (or fade out). */
   close(to: Box | null): Promise<void>;
   /** While a finger is down: draw the photo at its open box moved by x, y and scaled by s, 1:1, no spring. */
@@ -169,4 +185,33 @@ export function stripStep(x: number, v: number, dt: number): [number, number] {
   const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
   for (let s = 0; s < steps; s++) [x, v] = springStep(x, v, 0, h, SPRING_OPEN);
   return [x, v];
+}
+
+/** A box scaled by s about the point m0 (in the box's coordinates at scale 1), then moved so m0 sits under m. */
+export function zoomAbout(box0: Box, s: number, m0: { x: number; y: number }, m: { x: number; y: number }): Box {
+  return { x: m.x - (m0.x - box0.x) * s, y: m.y - (m0.y - box0.y) * s, w: box0.w * s, h: box0.h * s };
+}
+
+/** Is the photo zoomed in past its open size? */
+export const isZoomed = (box: Box | null, rest: Box | null): boolean => !!box && !!rest && box.w > rest.w * 1.01;
+
+/**
+ * Keep a zoomed photo covering the view: along an axis where it is bigger than the view, its edges may not come
+ * inside the view's edges; where it is smaller, it centres on its open box.
+ */
+export function clampPan(box: Box, rest: Box, view: Box): Box {
+  const axis = (p: number, size: number, vp: number, vs: number, rp: number, rs: number) =>
+    size > vs ? Math.min(vp, Math.max(vp + vs - size, p)) : rp + (rs - size) / 2;
+  return { x: axis(box.x, box.w, view.x, view.w, rest.x, rest.w), y: axis(box.y, box.h, view.y, view.h, rest.y, rest.h), w: box.w, h: box.h };
+}
+
+/** Where a zoom gesture settles: never smaller than the open box, never past max times it, about its centre. */
+export function settleZoom(box: Box, rest: Box, max: number, view: Box): Box {
+  const s = box.w / rest.w;
+  if (s <= 1.01) return { ...rest };
+  if (s > max) {
+    const k = max / s, cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    box = { x: cx - (box.w * k) / 2, y: cy - (box.h * k) / 2, w: box.w * k, h: box.h * k };
+  }
+  return clampPan(box, rest, view);
 }

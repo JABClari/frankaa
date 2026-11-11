@@ -103,6 +103,23 @@ try {
     check((await counter(page)) === "3 / 4", `${renderer}: tapping next works`);
     await page.locator(".fk-unfurl-prev").tap(); await page.waitForTimeout(600);
     check((await counter(page)) === "2 / 4", `${renderer}: tapping previous works`);
+    // Pinch to zoom with two fingers, then a double tap zooms back out.
+    const zoomed = () => page.evaluate(() => document.querySelector(".fk-unfurl")?.dataset.zoomed);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 160, y: 400, id: 1 }, { x: 220, y: 400, id: 2 }] });
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 160 - i * 12, y: 400, id: 1 }, { x: 220 + i * 12, y: 400, id: 2 }] }); await page.waitForTimeout(16); }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForTimeout(700);
+    const zc = [await zoomed(), await counter(page)];
+    check(zc[0] === "true" && zc[1] === "2 / 4", `${renderer}: a pinch zooms in (and does not change photo) ${zc}`);
+    const tapAt = async (x, y) => { await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] }); await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }); };
+    await tapAt(190, 400); await page.waitForTimeout(60); await tapAt(190, 400);
+    await page.waitForTimeout(700);
+    check((await zoomed()) === "false" && (await counter(page)) === "2 / 4", `${renderer}: a double tap zooms back out (and does not close)`);
+    await tapAt(190, 400); await page.waitForTimeout(60); await tapAt(190, 400);
+    await page.waitForTimeout(700);
+    check((await zoomed()) === "true", `${renderer}: a double tap zooms in`);
+    await tapAt(190, 400); await page.waitForTimeout(60); await tapAt(190, 400);
+    await page.waitForTimeout(700);
     await swipe(190, 300, 192, 520);
     check((await counter(page)) === "closed", `${renderer}: a pull down closes`);
     check((await page.evaluate(() => scrollY)) === y, `${renderer}: the page is back where it was`);

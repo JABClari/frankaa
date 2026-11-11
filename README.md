@@ -66,13 +66,26 @@ export function Card({ photos }) {
 
 The bindings are safe to import during server rendering: nothing touches the DOM until an effect runs. In the Next.js App Router, use them from a client component as above.
 
+Your own React controls in the top bar keep your context through a portal; render `lightbox.portal` anywhere:
+
+```jsx
+const lightbox = useUnfurl(photos, {
+  renderControls: (api) => <button type="button" className="fk-unfurl-action" onClick={() => remove(api.index)}>Remove this page</button>,
+});
+return <>{grid}{lightbox.portal}</>;
+```
+
+`react-dom` is an optional peer dependency, used only for that portal.
+
+`<Procession>` renders its first photo on the server, so the first paint is never empty; the slider keeps it until its own photo has decoded.
+
 ## procession (the slider)
 
 `procession(element, options)` turns an element into a slider and returns its controls. The element keeps its own children. It is 4:3 by default; size it with CSS.
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
-| `photos` | `(Photo \| string)[]` | required | `{ src, srcset?, sizes?, alt?, width?, height? }`, or a plain `src` |
+| `photos` | `(Photo \| string)[]` | required | `{ src, srcset?, sizes?, alt?, width?, height?, placeholder? }`, or a plain `src`. `placeholder` is a colour or an image address (a tiny thumbnail, or a blurhash you decoded to a data URL) shown until the photo paints |
 | `label` | `string` | `"Photos"` | Shorthand for `labels.region` |
 | `labels` | `Partial<ProcessionLabels>` | English | Every string, for translation (below) |
 | `start` | `number` | `0` | Photo to start on |
@@ -85,8 +98,17 @@ The bindings are safe to import during server rendering: nothing touches the DOM
 | `lazyMargin` | `string` | `"100px"` | How near the screen before the other photos load |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: steps jump, no autoplay |
 | `announce` | `boolean` | `true` | Announce changes through a polite live region |
+| `href` | `string` | | Make the slider a link (the track is an `<a href>`), so Cmd, Ctrl and middle click open it as usual |
+| `tabbable` | `boolean` | `true` | False takes the slider out of the tab order, when another link on the card already takes focus |
+| `counter` | `boolean` | `false` | Show a "2 / 5" counter (`labels.counter`) |
+| `zoom` | `boolean` | `false` | Pinch toward the fingers (springs back on release) and double tap to zoom in and out |
+| `zoomCursor` | `boolean` | `false` | The zoom-in cursor, for a slider that opens a lightbox |
+| `focusRing` | `"outside" \| "inset"` | `"outside"` | Inset draws the ring inside, for sliders in a parent with `overflow: hidden` |
+| `icons` | `{ prev?, next?, play?, pause? }` | | Your icons, as the `d` of a 24px stroked path |
 
 Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i), destroy() }`.
+
+`onSelect(index, img, event)` gets the event, so you can leave modified clicks to the browser or call `preventDefault()`. With `zoom`, a single touch tap waits a moment to tell it from a double tap.
 
 ## unfurl (the lightbox)
 
@@ -94,7 +116,9 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
-| `photos` | `(UnfurlPhoto \| string)[]` | required | `{ src, alt?, caption? }`, or a plain `src` |
+| `photos` | `(UnfurlItem \| string)[]` | required | Images `{ src, srcset?, sizes?, alt?, caption?, placeholder? }` (or a plain `src`) and videos (below), mixed |
+| `topActions` | `{ label, onClick(api), icon? }[]` | | Extra buttons in the top bar, before Close, inside the focus trap. `icon` is a 24px path `d` |
+| `controls` | `(host, api) => cleanup?` | | Mount your own controls in the top bar; return a function to tidy up |
 | `start` | `number` | `0` | Photo to open on |
 | `origin` | `(i) => Element \| DOMRect \| null` | | Where photo i sits on the page. Null, or off screen, means it fades instead |
 | `loop` | `boolean` | `false` | Wrap from the last photo to the first. Off: the ends rubber-band and the arrow there is marked unavailable |
@@ -107,13 +131,45 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 | `returnFocus` | `boolean \| HTMLElement` | `true` | On close, focus goes back where it was, to this element, or nowhere |
 | `announce` | `boolean` | `true` | Read each photo out through a polite live region |
 | `hideOrigin` | `boolean` | `true` | Hide the origin element while its photo is out |
-| `radius` | `number` | `16` | Corner radius of the photo in its spot (match your thumbnails) |
-| `openRadius` | `number` | `12` | Corner radius when open |
+| `radius` | `number \| [tl, tr, br, bl] \| (i) => ...` | `16` | Corner radius of the photo in its spot (match your thumbnails); four corners, or per photo for grids whose tiles differ |
+| `openRadius` | `number \| [tl, tr, br, bl]` | `12` | Corner radius when open |
+| `zoom` | `boolean \| { max }` | `true` | Pinch, double tap or double click, Ctrl or trackpad pinch, and the + and - keys zoom; one finger or the mouse pans while zoomed. `max` defaults to 4 |
+| `icons` | `{ prev?, next?, close?, play? }` | | Your icons, as the `d` of a 24px stroked path |
 | `container` | `HTMLElement` | `document.body` | Where the dialog mounts and its events are dispatched |
 
-Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`.
+Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`. `destroy()` removes it at once; if it was still open it fires `onCloseStart` and `onCloseEnd` with `reason: "destroy"`, and ends any running animation with `cancelled: true`.
+
+The `api` that actions and controls get is `{ index, item, close(), next(), prev(), show(i) }`.
 
 Also exported: `supported()` (is there WebGL), `registerEffect(name, effect)`, `checkEffect(effect)` (compile a shader up front; returns null or the compiler message), and `effectNames()`.
+
+### Videos
+
+Mix video slides with images. The poster springs from the grid and shows with a play button; the player loads only when the person taps play, and is removed (stopping it) when they move on or close.
+
+```js
+unfurl({
+  photos: [
+    { src: "/img/pool.jpg", alt: "Pool" },
+    { type: "video", provider: "youtube", src: "https://youtu.be/dQw4w9WgXcQ", poster: "/img/walk.jpg", title: "Pool walk" },
+    { type: "video", provider: "mp4", src: "/media/tour.mp4", poster: "/img/tour.jpg" },
+    { type: "video", provider: "tiktok", src: "https://www.tiktok.com/@you/video/7212345678901234567", poster: "/img/tt.jpg" },
+  ],
+});
+```
+
+| Provider | Player | `src` |
+| --- | --- | --- |
+| `youtube` | `youtube-nocookie.com` privacy embed | a watch, short, embed or youtu.be link, or the id |
+| `vimeo` | `player.vimeo.com` with `dnt=1` | a vimeo.com link (unlisted `?h=` kept) or the id |
+| `tiktok` | the official embed | a video link or the id |
+| `instagram` | the official embed | a post or reel link, or the code |
+| `mp4` | `<video controls playsinline>` | an http(s) or relative file address |
+
+- Give the poster the video's shape: the player takes the poster's box.
+- Moving to or from a video uses a short crossfade; the effect runs between image slides.
+- Players are sandboxed iframes, and only ids that match each provider's shape are used. A source that does not fit fires `onError` with `reason: "media"`.
+- CSP: add the providers you use to `frame-src` (for example `https://www.youtube-nocookie.com https://player.vimeo.com`), and your mp4 host to `media-src`.
 
 ### Renderers
 
@@ -133,13 +189,13 @@ Every hook is also dispatched as a bubbling DOM `CustomEvent` named `frankaa:<ke
 | --- | --- | --- | --- |
 | `onOpenStart` | `frankaa:open-start` | lightbox | `{ index }` |
 | `onOpenEnd` | `frankaa:open-end` | lightbox | `{ index, renderer }` |
-| `onCloseStart` | `frankaa:close-start` | lightbox | `{ index }` |
-| `onCloseEnd` | `frankaa:close-end` | lightbox | `{ index }`, after it has left the page |
+| `onCloseStart` | `frankaa:close-start` | lightbox | `{ index, reason }`, reason `"close"` or `"destroy"` |
+| `onCloseEnd` | `frankaa:close-end` | lightbox | `{ index, reason }`, after it has left the page |
 | `onChange` | `frankaa:change` | both | hook gets `(index, { index, from, how })` |
 | `onSlideChange` | `frankaa:slide-change` | slider | hook gets `(index, { index, from })` |
 | `onAnimationStart` | `frankaa:animation-start` | both | `{ type, index }`, type `"open"`, `"close"`, `"change"` or `"slide"` |
-| `onAnimationEnd` | `frankaa:animation-end` | both | as above; every start has an end |
-| `onError` | `frankaa:error` | both | `{ index, src, reason, fallback, message? }`, reason `"cors"`, `"load"`, `"webgl"` or `"shader"` |
+| `onAnimationEnd` | `frankaa:animation-end` | both | as above, plus `cancelled: true` when `destroy()` cut it short; every start has exactly one end |
+| `onError` | `frankaa:error` | both | `{ index, src, reason, fallback, message? }`, reason `"cors"`, `"load"`, `"webgl"`, `"shader"` or `"media"` |
 | `onSelect` | | slider | `(index, img)`, a click or Enter on the photo showing |
 
 ```js
@@ -158,6 +214,8 @@ Every string can be replaced. `{n}` and `{total}` are filled in.
 | `previous` | `Previous photo` | `previous` | `Previous photo` |
 | `position` | `Photo {n} of {total}` | `position` | `Photo {n} of {total}` |
 | `counter` | `{n} / {total}` | `pause`, `play` | `Pause slideshow`, `Play slideshow` |
+| `videoPosition` | `Video {n} of {total}` | | |
+| `play` | `Play video` | | |
 
 ```js
 unfurl({ photos, labels: { dialog: "Fotos", close: "Cerrar", next: "Siguiente", previous: "Anterior", position: "Foto {n} de {total}" } });
@@ -215,12 +273,28 @@ unfurl({ photos, effect: "wipe" });
 
 ## Styling
 
-`frankaa/style.css` puts every rule inside `:where()`, so any rule of yours wins. Theme with custom properties: `--fk-radius`, `--fk-placeholder`, `--fk-dot`, `--fk-dot-on`, `--fk-arrow-bg`, `--fk-arrow-ink`, `--fk-focus`, `--fk-backdrop`, `--fk-ease`, `--fk-z`.
+Each base rule in `frankaa/style.css` carries one class (`.fk-...`), so a site's element resets (`button {}`, `img {}`, `svg {}`) and a plain `:focus-visible` rule cannot hide the arrows or recolour the rings, while a rule of yours with the same class, loaded later, still wins. The buttons reset what a `button {}` rule may set.
+
+| Property | Default | |
+| --- | --- | --- |
+| `--fk-focus` | `#23306b` | Focus ring on the page (slider) |
+| `--fk-focus-dark` | `#fff` | Focus ring in the lightbox |
+| `--fk-focus-width` | `2px` | |
+| `--fk-press-scale` | `.97` | Buttons when pressed |
+| `--fk-hover-scale` | `1` | Buttons on hover (mouse) |
+| `--fk-font` | `500 13px/1.4 system-ui, ...` | The lightbox's text |
+| `--fk-radius`, `--fk-placeholder` | `12px`, `#ece8e1` | The slider's corners and empty colour |
+| `--fk-dot`, `--fk-dot-on`, `--fk-dot-shadow` | | Dots |
+| `--fk-arrow-bg`, `--fk-arrow-ink`, `--fk-arrow-shadow` | | Slider arrows |
+| `--fk-count-bg`, `--fk-count-ink` | | Slider counter |
+| `--fk-backdrop`, `--fk-backdrop-blur` | `rgba(12, 12, 14, .94)`, `8px` | Lightbox backdrop |
+| `--fk-button-bg`, `--fk-button-bg-hover` | | Lightbox buttons |
+| `--fk-ease`, `--fk-z` | `cubic-bezier(.23, 1, .32, 1)`, `1000` | |
 
 ## Accessibility
 
 - The slider is a labelled carousel region with one tab stop. Arrow keys, Home and End move; Enter selects. Autoplay is off by default, pauses on hover and focus, and has a pause button.
-- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Left and Right move, Home and End jump to the first and last photo, Escape closes. A key move puts a clear focus ring on the matching arrow button. Each photo's position and alt text are announced.
+- The lightbox is a dialog. Focus moves to the close button, Tab stays inside, and focus goes back on close. Left and Right move, Home and End jump to the first and last photo, + and - zoom, Escape closes. A key move puts a clear focus ring on the matching arrow button. Each photo's position and alt text are announced.
 - Reduced motion follows the system, or set `reducedMotion` to `"always"` or `"never"`.
 
 ## Motion
@@ -260,11 +334,11 @@ Minified and gzipped, each with the code it pulls in:
 
 | Import | Size |
 | --- | --- |
-| `frankaa/slider` | 3.3 kB |
-| `frankaa/lightbox` | 11.6 kB |
-| `frankaa` (both) | 13.4 kB |
-| `frankaa/react` (both, with bindings) | 13.9 kB |
-| `frankaa/style.css` | 1.8 kB |
+| `frankaa/slider` | 4.4 kB |
+| `frankaa/lightbox` | 14.9 kB |
+| `frankaa` (both) | 17.7 kB |
+| `frankaa/react` (both, with bindings) | 18.5 kB |
+| `frankaa/style.css` | 2.5 kB |
 
 ## Performance
 
@@ -293,6 +367,7 @@ npm run typecheck
 npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
 npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis lock, taps, scroll lock
 npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks
+npm run check:features # actions and controls, videos, destroy() hooks, zoom, resets, slider options
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.

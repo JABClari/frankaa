@@ -15,6 +15,7 @@ Only the latest minor version receives fixes while frankaa is below 1.0.
 - Zero runtime dependencies, and no install scripts.
 - No `eval`, `new Function` or `innerHTML`. Text goes in with `textContent`, so captions and labels cannot inject markup. It runs under a strict Content Security Policy with Trusted Types.
 - Photos load with `crossOrigin="anonymous"`. A cross-origin photo without CORS headers fails to load in WebGL rather than tainting the canvas, and the lightbox falls back to its CSS renderer and reports it through `onError`.
+- Video items load third-party players only after a tap, in sandboxed iframes (`allow-scripts allow-same-origin allow-presentation allow-popups`), from fixed provider addresses built from ids that must match each provider's shape. mp4 sources must be http(s) or relative.
 - Custom shaders (`effect: { fragment }` or `registerEffect`) run on the GPU in the page's own context. They have no network or DOM access, but a shader can still hang or crash a weak GPU driver. Only use shaders you trust, and never compile shader source taken from users or URLs.
 - npm releases are published from GitHub Actions with npm trusted publishing (OIDC) and carry a provenance statement, so no long-lived npm token exists. Check it with `npm audit signatures`.
 
