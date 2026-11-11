@@ -99,7 +99,7 @@ export function pickRenderer(pref: RendererPref | undefined, webgl: boolean): "w
 }
 
 /** What both renderers share with the lightbox. */
-export type StageCtx = { still: boolean; rSpot: number; rOpen: number; duration: number; area: () => Box };
+export type StageCtx = { still: boolean; rSpot: number; rOpen: number; duration: number; area: () => Box; count: number; loop: boolean };
 export type Stage = {
   kind: "webgl" | "css";
   /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
@@ -112,6 +112,11 @@ export type Stage = {
   track(o: { x: number; y: number; s: number }): void;
   /** The finger lifted: hand the photo to the spring, seeded with the release velocity (px/s). */
   release(v: { vx: number; vy: number }): void;
+  /** While a finger drags sideways: the strip of photos sits x px off centre, the neighbours peeking in. */
+  pan(x: number): void;
+  /** The finger lifted after a sideways drag: dir 1 or -1 makes the next or previous photo current, 0 stays; the
+   *  strip springs home carrying the release velocity vx (px/s). */
+  settle(dir: -1 | 0 | 1, vx: number): Promise<void>;
   resize(): void;
   destroy(): void;
 };
@@ -120,4 +125,48 @@ export type Stage = {
 export function draggedBox(rest: Box, o: { x: number; y: number; s: number }): Box {
   const w = rest.w * o.s, h = rest.h * o.s;
   return { x: rest.x + o.x + (rest.w - w) / 2, y: rest.y + o.y + (rest.h - h) / 2, w, h };
+}
+
+/** The space between photos in the swipe strip, in CSS px. */
+export const STRIP_GAP = 16;
+
+/** The photo before and after i, or null at the ends (unless loop). */
+export function neighbours(i: number, n: number, loop: boolean): { prev: number | null; next: number | null } {
+  if (n < 2) return { prev: null, next: null };
+  return {
+    prev: i > 0 ? i - 1 : loop ? n - 1 : null,
+    next: i < n - 1 ? i + 1 : loop ? 0 : null,
+  };
+}
+
+/** Where a fling would come to rest: the distance a release velocity (px/s) carries with iOS-like deceleration. */
+export function project(v: number, decel = 0.998): number {
+  return ((v / 1000) * decel) / (1 - decel);
+}
+
+/**
+ * Which photo a sideways release lands on: project the strip's final offset from where it is (x) and how fast it
+ * moves (vx), then take the nearest photo. 1 is the next photo, -1 the previous, 0 stays.
+ */
+export function pickSlide(x: number, vx: number, pitch: number, canPrev: boolean, canNext: boolean): -1 | 0 | 1 {
+  const end = x + project(vx);
+  if (end < -pitch / 2 && canNext) return 1;
+  if (end > pitch / 2 && canPrev) return -1;
+  return 0;
+}
+
+/**
+ * Lock a drag to one axis once it has moved `slop` px. It is vertical only when clearly steeper than 56 degrees,
+ * so a slightly diagonal sideways swipe never turns into a pull to close.
+ */
+export function lockAxis(dx: number, dy: number, slop = 10): "x" | "y" | null {
+  if (Math.hypot(dx, dy) < slop) return null;
+  return Math.abs(dy) > Math.abs(dx) * 1.5 ? "y" : "x";
+}
+
+/** A one-dimensional spring step for the strip (the same spring as opening). Returns the new value and speed. */
+export function stripStep(x: number, v: number, dt: number): [number, number] {
+  const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+  for (let s = 0; s < steps; s++) [x, v] = springStep(x, v, 0, h, SPRING_OPEN);
+  return [x, v];
 }

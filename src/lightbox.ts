@@ -3,7 +3,7 @@
 // CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
 // If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
 // says so through onError, so nothing fails silently.
-import { onScreen, pickRenderer, stageBox, swipeIntent, type Box, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { lockAxis, neighbours, onScreen, pickRenderer, pickSlide, stageBox, swipeIntent, STRIP_GAP, type Box, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
 import { checkEffect, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
@@ -54,6 +54,8 @@ export type UnfurlOptions = UnfurlHooks & {
   origin?: (i: number) => Element | DOMRect | null;
   /** Shorthand for labels.dialog. */
   label?: string;
+  /** Wrap from the last photo to the first (arrows, keys and swipes). Default false: the ends rubber-band. */
+  loop?: boolean;
   /** Every string the lightbox shows or reads out, for other languages. */
   labels?: Partial<UnfurlLabels>;
   /** The effect between photos: a built-in or registered name, or your own { fragment, uniforms, duration, easing }.
@@ -133,8 +135,13 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   if (n > 1) root.append(prevBtn, nextBtn);
   root.append(cap);
 
+  const loop = !!options.loop;
   const label = () => {
     const p = photos[index], v = { n: index + 1, total: n };
+    // At the ends (without loop) the arrow there is marked unavailable but keeps focus, so the focus trap holds.
+    const nb = neighbours(index, n, loop);
+    prevBtn.setAttribute("aria-disabled", String(nb.prev === null));
+    nextBtn.setAttribute("aria-disabled", String(nb.next === null));
     count.textContent = fill(L.counter, v);
     if (announce) status.textContent = fill(L.position, v) + (p.alt ? `. ${p.alt}` : "");
     cap.textContent = p.caption ?? "";
@@ -181,7 +188,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   // ---------- Renderers ----------
   const ctx: StageCtx = {
-    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480,
+    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 480, count: n, loop,
     // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
     // areas, which the overlay carries as padding.
     area: () => {
@@ -247,6 +254,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   // ---------- Moving ----------
   const show = (to: number, how: MoveHow, dir?: 1 | -1) => {
     if (phase === "closing" || phase === "closed" || n < 2) return;
+    if (!loop && (to < 0 || to >= n)) return;
     const next = ((to % n) + n) % n;
     if (next === index) return;
     const from = index, d = dir ?? (next > from ? 1 : -1);
@@ -322,12 +330,28 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   // Gestures. While the finger is down the photo follows it 1:1 (sideways to change photo, down to close, up with
   // resistance); the backdrop fades with the pull. On release the spring takes over with the finger's velocity:
   // it moves, closes or settles back. The photo can be caught at any point, even mid-animation.
-  type Drag = { id: number; x: number; y: number; axis: "x" | "y" | null; samples: { x: number; y: number; t: number }[] };
+  type Drag = { id: number; x: number; y: number; px: number; axis: "x" | "y" | null; samples: { x: number; y: number; t: number }[] };
   let drag: Drag | null = null;
   const pull = (dy: number) => Math.min(1, Math.max(0, dy) / (window.innerHeight * 0.5));
+  // The strip's width is read once per drag, at the first move, never per frame.
+  let stripW = 0;
+  const stripWidth = () => stripW || (stripW = ctx.area().w);
+  // A sideways swipe ends: the strip settles on the chosen photo (dir 1 next, -1 previous, 0 the same one).
+  const slide = (dir: -1 | 0 | 1, vx: number) => {
+    stripW = 0;
+    const s = stage!;
+    if (dir === 0) { void s.settle(0, vx); return; }
+    const from = index, next = neighbours(index, n, loop)[dir > 0 ? "next" : "prev"]!;
+    index = next;
+    label();
+    hide(next);
+    emit("onChange", { index: next, from, how: "swipe" }, next, { index: next, from, how: "swipe" });
+    emit("onAnimationStart", { type: "change", index: next });
+    void s.settle(dir, vx).then(() => emit("onAnimationEnd", { type: "change", index: next }));
+  };
   root.addEventListener("pointerdown", (e) => {
     if (drag || !e.isPrimary || (e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
-    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: 0, axis: null, samples: [{ x: e.clientX, y: e.clientY, t: e.timeStamp }] };
     try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   });
   root.addEventListener("pointermove", (e) => {
@@ -337,11 +361,17 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     d.samples.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     if (d.samples.length > 8) d.samples.shift();
     if (!d.axis) {
-      if (Math.hypot(dx, dy) < 8) return;
-      d.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      d.axis = lockAxis(dx, dy);
+      if (!d.axis) return;
     }
-    if (d.axis === "x") stage.track({ x: n > 1 ? dx : rubber(Math.abs(dx), 60) * Math.sign(dx), y: 0, s: 1 });
-    else {
+    if (d.axis === "x") {
+      // The strip follows the finger 1:1; past the first or last photo it resists.
+      const nb = neighbours(index, n, loop);
+      const open = dx < 0 ? nb.next !== null : nb.prev !== null;
+      d.px = open ? dx : Math.sign(dx) * rubber(Math.abs(dx), stripWidth() * 0.25);
+      root.dataset.swiping = "true";
+      stage.pan(d.px);
+    } else {
       const p = pull(dy);
       stage.track({ x: dx * 0.5, y: dy > 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p });
       bg.style.transition = "none";
@@ -353,14 +383,23 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     if (!d || e.pointerId !== d.id) return;
     drag = null;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
-    const v = velocity([...d.samples, { x: e.clientX, y: e.clientY, t: e.timeStamp }]);
+    // Velocity from the moves only: the lift often repeats the last position a little later, which would read as
+    // slowing down. A finger that rested over 100 ms before lifting has no velocity.
+    const lastMove = d.samples[d.samples.length - 1];
+    const v = e.timeStamp - lastMove.t > 100 ? { vx: 0, vy: 0 } : velocity(d.samples);
     bg.style.transition = "";
     bg.style.opacity = "";
-    const intent = cancelled ? null : d.axis === "x" ? swipeIntent(dx, 0, v.vx, 0) : d.axis === "y" ? swipeIntent(0, dy, 0, v.vy) : swipeIntent(dx, dy, v.vx, v.vy);
+    delete root.dataset.swiping;
+    if (d.axis === "x") {
+      // Project where the fling would stop, take the nearest photo, and spring there with the finger's velocity.
+      const nb = neighbours(index, n, loop);
+      const dir = cancelled ? 0 : pickSlide(d.px, v.vx, stripWidth() + STRIP_GAP, nb.prev !== null, nb.next !== null);
+      slide(dir, v.vx);
+      return;
+    }
+    const intent = cancelled ? null : d.axis === "y" ? swipeIntent(0, dy, 0, v.vy) : swipeIntent(dx, dy, v.vx, v.vy);
     if (d.axis) stage?.release(v);
-    if (intent === "next" && n > 1) move(1, "swipe");
-    else if (intent === "prev" && n > 1) move(-1, "swipe");
-    else if (intent === "close" || (intent === "tap" && !d.axis)) close();
+    if (intent === "close" || (intent === "tap" && !d.axis)) close();
   };
   // iOS and Android: never let a touch on the overlay become a browser pan or zoom. A pan would scroll the page
   // behind and fire pointercancel, which is what made sideways swipes fail. Taps and pointer events still work.

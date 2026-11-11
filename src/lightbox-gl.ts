@@ -1,9 +1,11 @@
-// The WebGL renderer, in two passes on one full-screen canvas:
-// 1. the effect (a fragment shader, built-in or yours) draws the two photos into an offscreen texture the size of
-//    the photo's box;
-// 2. that texture is drawn where the spring says, clipped to a rounded box, with a fade when asked.
-// Raw WebGL1, no package.
-import { containBox, draggedBox, radiusAt, stepBox, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
+// The WebGL renderer, on one full-screen canvas:
+// - at rest, while springing and while swiping, each photo is drawn straight from its texture into a rounded box
+//   (one cheap pass); a sideways swipe draws the neighbours beside it, like a strip of photos;
+// - only while an effect runs (a key or button move) does the effect shader draw the two photos into an offscreen
+//   texture first, which is then drawn into the box.
+// Photos are decoded off the main thread (img.decode()) before they are uploaded, and only the current photo and
+// its neighbours are uploaded, one at a time when the browser is idle. Raw WebGL1, no package.
+import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type Stage, type StageCtx } from "./lightbox-math";
 import { PRELUDE, easingFn, uniformKind, type Effect } from "./effects";
 
 const EFFECT_VERT = `attribute vec2 p;
@@ -21,9 +23,11 @@ void main() {
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
 }`;
 
+// Draws a texture into a rounded box: a photo cover-fitted (asp), or the effect's offscreen result (part).
 const BOX_FRAG = `precision mediump float;
 varying vec2 uv;
 uniform sampler2D img;
+uniform vec2 asp;
 uniform vec2 part;
 uniform vec2 size;
 uniform float radius;
@@ -33,7 +37,7 @@ void main() {
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
   float edge = clamp(0.5 - d, 0.0, 1.0);
   if (edge <= 0.0) discard;
-  gl_FragColor = vec4(texture2D(img, uv * part).rgb, 1.0) * edge * alpha;
+  gl_FragColor = vec4(texture2D(img, ((uv - 0.5) / asp + 0.5) * part).rgb, 1.0) * edge * alpha;
 }`;
 
 const FADE_MS = 160;
@@ -43,6 +47,12 @@ export function supported(): boolean {
   if (typeof document === "undefined") return false;
   try { return !!document.createElement("canvas").getContext("webgl"); } catch { return false; }
 }
+
+/** Run when the browser is idle (or soon, where it has no idle callback). */
+const idle = (f: () => void) => {
+  const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+  if (w.requestIdleCallback) w.requestIdleCallback(f, { timeout: 300 }); else setTimeout(f, 50);
+};
 
 type Built = { stage: Stage; error?: undefined } | { stage?: undefined; error: { reason: "webgl" | "shader"; message: string } };
 
@@ -77,7 +87,10 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
   const buf = g.createBuffer();
   g.bindBuffer(g.ARRAY_BUFFER, buf);
   g.bufferData(g.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), g.STATIC_DRAW);
+  let bound: WebGLProgram | null = null;
   const bind = (p: WebGLProgram) => {
+    if (bound === p) return;
+    bound = p;
     g.useProgram(p);
     const loc = g.getAttribLocation(p, "p");
     g.enableVertexAttribArray(loc);
@@ -86,7 +99,7 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
   const names = ["uFrom", "uTo", "uProgress", "uResolution", "uFromSize", "uToSize", "uTime", "uDirection"];
   const F: Record<string, WebGLUniformLocation | null> = {};
   for (const n of [...names, ...Object.keys(effect.uniforms ?? {})]) F[n] = g.getUniformLocation(fx, n);
-  const B = { box: g.getUniformLocation(bx, "box"), view: g.getUniformLocation(bx, "view"), img: g.getUniformLocation(bx, "img"), part: g.getUniformLocation(bx, "part"), size: g.getUniformLocation(bx, "size"), radius: g.getUniformLocation(bx, "radius"), alpha: g.getUniformLocation(bx, "alpha") };
+  const B = { box: g.getUniformLocation(bx, "box"), view: g.getUniformLocation(bx, "view"), img: g.getUniformLocation(bx, "img"), asp: g.getUniformLocation(bx, "asp"), part: g.getUniformLocation(bx, "part"), size: g.getUniformLocation(bx, "size"), radius: g.getUniformLocation(bx, "radius"), alpha: g.getUniformLocation(bx, "alpha") };
 
   const texture = () => {
     const t = g.createTexture();
@@ -99,7 +112,8 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
   };
 
   // Photos load with crossOrigin="anonymous": a cross-origin photo without CORS headers fails to load (it never
-  // taints the canvas), and the lightbox then switches to the CSS renderer and reports it.
+  // taints the canvas), and the lightbox then switches to the CSS renderer and reports it. Each is decoded off the
+  // main thread before the upload, so the upload does not stall a frame with a JPEG decode.
   const tex: (WebGLTexture | null)[] = srcs.map(() => null);
   const dims: ([number, number] | null)[] = srcs.map(() => null);
   const loads = new Map<number, Promise<boolean>>();
@@ -111,7 +125,8 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.decoding = "async";
-        img.onload = () => {
+        const upload = () => {
+          if (dead) { resolve(false); return; }
           const t = texture();
           g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
           try { g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, img); } catch { g.deleteTexture(t); resolve(false); return; }
@@ -120,47 +135,90 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         };
         img.onerror = () => resolve(false);
         img.src = srcs[i];
+        (typeof img.decode === "function" ? img.decode() : new Promise((r, j) => { img.onload = r; img.onerror = j; })).then(upload, () => resolve(false));
       });
       loads.set(i, p);
     }
     return p;
   };
+  // The neighbours of the current photo, uploaded one at a time when the browser is idle.
+  const prefetch = (i: number) => {
+    const { prev, next } = neighbours(i, srcs.length, ctx.loop);
+    for (const j of [next, prev]) if (j !== null && !loads.has(j)) idle(() => { if (!dead) void ready(j); });
+  };
 
-  // The offscreen target, the size of the canvas; each frame uses the box-sized corner of it.
+  // The offscreen target for effects, the size of the canvas; each frame uses the box-sized corner of it.
   const target = texture();
   const fbo = g.createFramebuffer();
-  let vw = 1, vh = 1, dpr = 1;
+  let vw = 1, vh = 1, dpr = 1, W = 1, H = 1;
   const resizeCanvas = () => {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     vw = canvas.clientWidth || window.innerWidth; vh = canvas.clientHeight || window.innerHeight;
-    canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+    W = canvas.width = Math.round(vw * dpr); H = canvas.height = Math.round(vh * dpr);
     g.bindTexture(g.TEXTURE_2D, target);
-    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, canvas.width, canvas.height, 0, g.RGBA, g.UNSIGNED_BYTE, null);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, W, H, 0, g.RGBA, g.UNSIGNED_BYTE, null);
     g.bindFramebuffer(g.FRAMEBUFFER, fbo);
     g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, target, 0);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
   };
   resizeCanvas();
 
+  // Layout is read once per resize, never during an animation frame.
+  let area = ctx.area();
   const aspect = (i: number) => (dims[i] ? dims[i]![0] / dims[i]![1] : 1.5);
-  const fitFor = (i: number): Box => containBox(aspect(i), ctx.area());
+  const fitFor = (i: number): Box => containBox(aspect(i), area);
+  const pitch = () => area.w + STRIP_GAP;
   const ease = easingFn(effect.easing);
   const t0 = performance.now();
 
   const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
+  const strip = { x: 0, v: 0, held: false };
   let raf = 0, last = 0, dead = false, held = false;
   let waiters: (() => void)[] = [];
   const swapMs = ctx.still ? FADE_MS : ctx.duration;
 
+  const coverAsp = (i: number, b: Box): [number, number] => {
+    const ia = aspect(i), ba = b.w / Math.max(1, b.h);
+    return ia > ba ? [ia / ba, 1] : [1, ba / ia];
+  };
+  const drawBox = (t: WebGLTexture, b: Box, asp: [number, number], part: [number, number], radius: number, alpha: number) => {
+    bind(bx);
+    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, t);
+    g.uniform1i(B.img, 0);
+    g.uniform2f(B.asp, asp[0], asp[1]);
+    g.uniform2f(B.part, part[0], part[1]);
+    g.uniform4f(B.box, b.x, b.y, b.w, b.h);
+    g.uniform2f(B.size, b.w, b.h);
+    g.uniform2f(B.view, vw, vh);
+    g.uniform1f(B.radius, Math.min(radius, b.w / 2, b.h / 2));
+    g.uniform1f(B.alpha, alpha);
+    g.drawArrays(g.TRIANGLES, 0, 6);
+  };
+  const shift = (b: Box, dx: number): Box => ({ x: b.x + dx, y: b.y, w: b.w, h: b.h });
+
   const draw = () => {
-    const a = tex[st.a] ?? tex[st.b], b = tex[st.b] ?? tex[st.a];
     g.bindFramebuffer(g.FRAMEBUFFER, null);
-    g.viewport(0, 0, canvas.width, canvas.height);
+    g.viewport(0, 0, W, H);
     g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
+    g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
+    const radius = radiusAt(st.closing, st.box, st.target, ctx.rSpot, ctx.rOpen);
+    // The neighbours, while the strip is off centre.
+    if (strip.held || Math.abs(strip.x) > 0.5) {
+      const { prev, next } = neighbours(st.b, srcs.length, ctx.loop);
+      for (const [j, k] of [[prev, -1], [next, 1]] as const) {
+        const t = j === null ? null : tex[j];
+        if (j === null || !t) continue;
+        const b = shift(fitFor(j), k * pitch() + strip.x);
+        if (b.x > vw || b.x + b.w < 0) continue;
+        drawBox(t, b, coverAsp(j, b), [1, 1], ctx.rOpen, st.alpha);
+      }
+    }
+    const a = tex[st.a] ?? tex[st.b], b = tex[st.b] ?? tex[st.a];
     if (!a || !b) return;
-    const box = st.box;
-    const bw = Math.max(1, Math.min(canvas.width, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(canvas.height, Math.round(box.h * dpr)));
-    // 1. The effect, into the box-sized corner of the offscreen texture.
+    const box = shift(st.box, strip.x);
+    if (!st.swapAt) { drawBox(b, box, coverAsp(st.b, box), [1, 1], radius, st.alpha); return; }
+    // An effect is running: draw it offscreen, then into the box.
+    const bw = Math.max(1, Math.min(W, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(H, Math.round(box.h * dpr)));
     bind(fx);
     g.bindFramebuffer(g.FRAMEBUFFER, fbo);
     g.viewport(0, 0, bw, bh);
@@ -183,24 +241,13 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
       else g.uniform4fv(loc, v as number[]);
     }
     g.drawArrays(g.TRIANGLES, 0, 6);
-    // 2. The box on screen, rounded.
-    bind(bx);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
-    g.viewport(0, 0, canvas.width, canvas.height);
-    g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
-    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, target);
-    g.uniform1i(B.img, 0);
-    g.uniform2f(B.part, bw / canvas.width, bh / canvas.height);
-    g.uniform4f(B.box, box.x, box.y, box.w, box.h);
-    g.uniform2f(B.size, box.w, box.h);
-    g.uniform2f(B.view, vw, vh);
-    const r = radiusAt(st.closing, box, st.target, ctx.rSpot, ctx.rOpen);
-    g.uniform1f(B.radius, Math.min(r, box.w / 2, box.h / 2));
-    g.uniform1f(B.alpha, st.alpha);
-    g.drawArrays(g.TRIANGLES, 0, 6);
+    g.viewport(0, 0, W, H);
+    g.enable(g.BLEND);
+    drawBox(target!, box, [1, 1], [bw / W, bh / H], radius, st.alpha);
   };
 
-  // One rAF loop draws the spring, the effect and any fade. Waiters resolve when it comes to rest.
+  // One rAF loop draws the spring, the strip, the effect and any fade. Waiters resolve when it comes to rest.
   const frame = () => {
     const now = performance.now();
     const dt = Math.min(1 / 15, Math.max(0, (now - (last || now - 1000 / 60)) / 1000));
@@ -210,6 +257,14 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     if (held) moving = true;
     else if (ctx.still) st.box = { ...st.target };
     else moving = stepBox(st.box, st.vel, st.target, dt, st.closing ? SPRING_CLOSE : SPRING_OPEN);
+    if (strip.held) moving = true;
+    else if (strip.x !== 0 || strip.v !== 0) {
+      if (ctx.still) { strip.x = 0; strip.v = 0; }
+      else {
+        [strip.x, strip.v] = stripStep(strip.x, strip.v, dt);
+        if (Math.abs(strip.x) < 0.25 && Math.abs(strip.v) < 2) { strip.x = 0; strip.v = 0; } else moving = true;
+      }
+    }
     if (st.swapAt) {
       const t = swapMs > 0 ? (now - st.swapAt) / swapMs : 1;
       st.mix = ease(Math.min(1, t));
@@ -238,15 +293,16 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
     stage: {
       kind: "webgl",
       async open(i, from, started) {
+        area = ctx.area();
         if (!(await ready(i)) || dead) return false;
         st.a = st.b = i;
         st.target = fitFor(i);
         if (ctx.still || !from) { st.box = { ...st.target }; st.alpha = 0; st.fadeAt = performance.now(); }
         else st.box = { ...from };
-        srcs.forEach((_, k) => k !== i && void ready(k));
         const p = run();
         started?.();
         await p;
+        prefetch(i);
         return true;
       },
       async show(i, dir) {
@@ -255,7 +311,21 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         if (!(await ready(i)) || dead) return false;
         st.target = fitFor(i);
         await Promise.all([p, run()]);
+        prefetch(i);
         return true;
+      },
+      async close(to) {
+        held = false; strip.held = false;
+        st.closing = true;
+        if (ctx.still || !to) {
+          st.fadeAt = performance.now(); st.fadeOut = true;
+          if (!to) st.target = { x: st.box.x + st.box.w * 0.05, y: st.box.y + st.box.h * 0.05, w: st.box.w * 0.9, h: st.box.h * 0.9 };
+        } else {
+          // Close from where the photo is on screen, strip offset included.
+          st.box = shift(st.box, strip.x); strip.x = 0; strip.v = 0;
+          st.target = { ...to };
+        }
+        await run();
       },
       track(o) {
         if (dead) return;
@@ -269,16 +339,29 @@ export function createGlStage(canvas: HTMLCanvasElement, srcs: string[], effect:
         st.vel = [v.vx, v.vy, 0, 0];
         void run();
       },
-      async close(to) {
-        held = false;
-        st.closing = true;
-        if (ctx.still || !to) {
-          st.fadeAt = performance.now(); st.fadeOut = true;
-          if (!to) st.target = { x: st.box.x + st.box.w * 0.05, y: st.box.y + st.box.h * 0.05, w: st.box.w * 0.9, h: st.box.h * 0.9 };
-        } else st.target = { ...to };
-        await run();
+      pan(x) {
+        if (dead) return;
+        strip.held = true; strip.x = x; strip.v = 0;
+        if (!raf) raf = requestAnimationFrame(frame);
       },
-      resize() { resizeCanvas(); st.target = fitFor(st.b); void run(); },
+      async settle(dir, vx) {
+        strip.held = false;
+        strip.v = vx;
+        if (dir !== 0) {
+          const { prev, next } = neighbours(st.b, srcs.length, ctx.loop);
+          const j = dir > 0 ? next : prev;
+          if (j !== null) {
+            // The neighbour becomes current; the strip is re-based so nothing moves on screen.
+            st.a = st.b = j; st.mix = 0; st.swapAt = 0;
+            st.target = fitFor(j); st.box = { ...st.target }; st.vel = [0, 0, 0, 0];
+            strip.x += dir * pitch();
+            void ready(j);
+          }
+        }
+        await run();
+        if (dir !== 0) prefetch(st.b);
+      },
+      resize() { resizeCanvas(); area = ctx.area(); st.target = fitFor(st.b); void run(); },
       destroy() {
         dead = true;
         cancelAnimationFrame(raf); raf = 0;

@@ -97,6 +97,7 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 | `photos` | `(UnfurlPhoto \| string)[]` | required | `{ src, alt?, caption? }`, or a plain `src` |
 | `start` | `number` | `0` | Photo to open on |
 | `origin` | `(i) => Element \| DOMRect \| null` | | Where photo i sits on the page. Null, or off screen, means it fades instead |
+| `loop` | `boolean` | `false` | Wrap from the last photo to the first. Off: the ends rubber-band and the arrow there is marked unavailable |
 | `effect` | `string \| Effect` | `"displacement"` | `"displacement"`, `"ripple"`, `"fade"`, `"zoom"`, `"none"`, a registered name, or your own shader |
 | `renderer` | `"auto" \| "webgl" \| "css"` | `"auto"` | Auto uses WebGL where it is there, else CSS. CSS never touches WebGL |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: a short fade, no spring, no effect |
@@ -225,8 +226,10 @@ unfurl({ photos, effect: "wipe" });
 ## Motion
 
 - Open and close are critically damped springs: no bounce, about 250 ms to cover 95% of the way in and 220 ms out, so the exit is quicker than the entrance.
-- Gestures follow the finger 1:1 with no easing: sideways to change photo, down to close (the backdrop fades with the pull), up with resistance. On release the spring carries on from the finger's velocity, and the photo can be caught again mid-animation.
-- A short fast flick counts; a drag released while heading back springs back.
+- Sideways swipes work like a photo strip: the photo follows the finger 1:1 and the previous and next photos peek in from the sides. On release frankaa projects where the fling would stop, picks the nearest photo and springs there carrying the finger's velocity. The first and last photos rubber-band (unless `loop`).
+- The drag locks to one axis after 10 px, and only a clearly vertical drag (steeper than about 56 degrees) pulls down to close, so a slightly diagonal swipe never closes.
+- Down closes, with the backdrop fading with the pull; up meets resistance. The photo can be caught again mid-animation.
+- Keys and buttons change photos with the effect; swipes slide the strip, like a native photo viewer.
 - Photo changes default to ease-out (no slow start on something the person triggered). In the CSS renderer they stay under 300 ms.
 - Buttons press to scale .97. Hover and fades use `cubic-bezier(.23, 1, .32, 1)`.
 - Reduced motion: no spring, no effect, a short fade; finger tracking stays, since the person is making that motion.
@@ -258,10 +261,17 @@ Minified and gzipped, each with the code it pulls in:
 | Import | Size |
 | --- | --- |
 | `frankaa/slider` | 3.3 kB |
-| `frankaa/lightbox` | 9.7 kB |
-| `frankaa` (both) | 11.5 kB |
-| `frankaa/react` (both, with bindings) | 12.0 kB |
-| `frankaa/style.css` | 1.6 kB |
+| `frankaa/lightbox` | 11.6 kB |
+| `frankaa` (both) | 13.4 kB |
+| `frankaa/react` (both, with bindings) | 13.9 kB |
+| `frankaa/style.css` | 1.8 kB |
+
+## Performance
+
+- At rest, springing and swiping, each photo is drawn in one pass (a transform in CSS, one textured quad in WebGL); the effect shader runs only during a key or button change.
+- Photos are decoded with `img.decode()` before they are shown or uploaded, and only the current photo and its neighbours are loaded, the neighbours when the browser is idle.
+- Layout is read when the lightbox opens or resizes, never inside an animation frame.
+- `npm run check:perf` records frames during open, close, a swipe, every effect and the CSS renderer, on desktop and on an iPhone-sized viewport with the CPU slowed 4x. On an Apple silicon Mac it holds 60 fps on desktop, and the CSS renderer keeps every frame under 18 ms at 4x.
 
 ## Using frankaa with AI
 
@@ -281,7 +291,8 @@ npm run build      # dist/ and docs/lib/, with a size report
 npm test           # node --test, needs Node 22.18 or later
 npm run typecheck
 npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
-npm run check:touch # phone check: real touch swipes, button taps, scroll lock (Chromium and WebKit)
+npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis lock, taps, scroll lock
+npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.
