@@ -1,6 +1,6 @@
 {
   "name": "frankaa",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "A photo slider that follows the finger and a lightbox that unfurls each photo from its spot, with WebGL shader effects or a CSS fallback. Framework-free TypeScript, zero dependencies, thin React bindings.",
   "license": "MIT",
   "author": "Joshua, Sirius Arc",
@@ -14,7 +14,8 @@
   },
   "type": "module",
   "sideEffects": [
-    "*.css"
+    "*.css",
+    "./dist/chunks/*.js"
   ],
   "exports": {
     ".": {
@@ -28,6 +29,10 @@
     "./lightbox": {
       "types": "./dist/lightbox.d.ts",
       "import": "./dist/lightbox.js"
+    },
+    "./drumline": {
+      "types": "./dist/drumline.d.ts",
+      "import": "./dist/drumline.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",
@@ -53,7 +58,8 @@
     "check:touch": "node scripts/check-touch.mjs",
     "check:perf": "node scripts/check-perf.mjs",
     "pretest": "npm run build",
-    "check:features": "node scripts/check-features.mjs"
+    "check:features": "node scripts/check-features.mjs",
+    "check:drumline": "node scripts/check-drumline.mjs"
   },
   "keywords": [
     "slider",
@@ -75,7 +81,10 @@
     "reduced-motion",
     "zero-dependency",
     "llms-txt",
-    "ai-ready"
+    "ai-ready",
+    "ruler",
+    "stories",
+    "scrubber"
   ],
   "peerDependencies": {
     "react": ">=18",

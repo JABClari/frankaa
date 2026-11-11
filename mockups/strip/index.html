@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strip mockups</title>
+<style>
+:root {
+  --paper: #FBF9F5; --ink: #16130F; --ink-2: #6a6157; --ink-3: #9a9187; --card: #fff;
+  --indigo: #23306B; --gold: #E9B23A; --red: #C8322B; --cream: #F4EBDD;
+  --hair: 0 0 0 1px rgba(22, 19, 15, .07); --lift: 0 0 0 1px rgba(22, 19, 15, .06), 0 1px 2px rgba(22, 19, 15, .06), 0 4px 12px -4px rgba(22, 19, 15, .08);
+  --ease: cubic-bezier(.23, 1, .32, 1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+main { max-width: 1240px; margin: 0 auto; padding: 32px max(16px, env(safe-area-inset-right)) 64px max(16px, env(safe-area-inset-left)); }
+h1 { font: 700 22px/1.2 "Avenir Next", Futura, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.01em; margin: 0; }
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+.tabs { display: inline-flex; padding: 3px; border-radius: 10px; background: rgba(22, 19, 15, .05); }
+.tabs button { height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: none; color: var(--ink-2); font: 500 13px/1 inherit; font-family: inherit; cursor: pointer; transition: background-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease), transform .16s var(--ease); }
+.tabs button:hover { color: var(--ink); }
+.tabs button:active { transform: scale(.97); }
+.tabs button[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px rgba(22, 19, 15, .06), 0 1px 2px rgba(22, 19, 15, .1); }
+.tabs button:focus-visible, .panel :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 18px; align-items: start; }
+
+/* The stage the strip lives on */
+.stage { position: relative; border-radius: 18px; overflow: hidden; background: #141412; color: #d9d6cf; box-shadow: var(--lift); min-height: 520px; display: grid; align-content: center; padding: 28px 0; }
+.stage[data-theme="light"] { background: #fff; color: var(--ink); }
+.stage-note { position: absolute; left: 18px; bottom: 14px; font: 500 11px/1 var(--mono); letter-spacing: .04em; opacity: .5; text-transform: uppercase; }
+
+/* Panel */
+.panel { border-radius: 16px; background: var(--card); box-shadow: var(--lift); padding: 14px 16px; display: grid; gap: 4px; font-size: 13px; }
+.panel h2 { font: 600 12px/1 inherit; font-family: inherit; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin: 4px 0 8px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+.row > span { color: var(--ink-2); }
+.toggle { appearance: none; -webkit-appearance: none; width: 30px; height: 18px; margin: 0; border-radius: 999px; background: rgba(22, 19, 15, .14); position: relative; cursor: pointer; transition: background-color .2s var(--ease); flex: none; }
+.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .22s var(--ease); }
+.toggle:checked { background: var(--indigo); }
+.toggle:checked::after { transform: translateX(12px); }
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: rgba(22, 19, 15, .05); }
+.seg button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink-2); font: 500 12px/1 inherit; font-family: inherit; cursor: pointer; transition: background-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease), transform .16s var(--ease); }
+.seg button:active { transform: scale(.97); }
+.seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px rgba(22, 19, 15, .06), 0 1px 2px rgba(22, 19, 15, .1); }
+input[type="range"] { width: 110px; accent-color: var(--indigo); }
+.sep { height: 1px; background: rgba(22, 19, 15, .07); margin: 6px 0; }
+.log { margin-top: 6px; font: 11.5px/1.6 var(--mono); color: var(--ink-2); min-height: 56px; }
+
+/* ---------- The strip (mockup) ---------- */
+.dl { --w: 72px; --h: 128px; --gap: 12px; --r: 14px; position: relative; display: grid; gap: 18px; }
+.dl.bars { --w: 46px; --h: 220px; --gap: 12px; --r: 3px; }
+.dl-head { display: flex; align-items: center; justify-content: center; gap: 18px; min-height: 30px; }
+.dl-head[hidden] { display: none; }
+.ruler { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px; cursor: ew-resize; touch-action: none; }
+.tick { display: block; flex: none; width: 1px; height: 11px; background: currentColor; opacity: .3; transform-origin: 50% 50%; }
+.nums { display: flex; align-items: center; gap: 8px; font: 500 11px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.nums .n { opacity: .42; min-width: 2ch; text-align: center; }
+.nums .cur { min-width: 2.6ch; padding: 4px 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px currentColor; text-align: center; }
+.nums.frac .cur { box-shadow: none; padding: 0; }
+.nums.bump .cur { animation: bump .16s var(--ease); }
+@keyframes bump { from { opacity: .3; transform: translateY(2px); } }
+.vp { position: relative; overflow: hidden; touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.vp.grabbing { cursor: grabbing; }
+.card { position: absolute; left: 0; top: 50%; width: var(--w); height: var(--h); margin: calc(var(--h) / -2) 0 0; padding: 0; border: 0; border-radius: var(--r); overflow: hidden; background: #2a2926; cursor: zoom-in; transform-origin: 50% 50%; -webkit-appearance: none; appearance: none; }
+.stage[data-theme="light"] .card { background: var(--cream); }
+.card img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; -webkit-user-drag: none; }
+.card:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.card[aria-current="true"] { z-index: 1; }
+.min-count { justify-self: center; font: 500 11px/1 var(--mono); opacity: .55; font-variant-numeric: tabular-nums; }
+.min-count[hidden] { display: none; }
+
+/* ---------- Expanded view ---------- */
+.ex { position: fixed; inset: 0; z-index: 50; color: #efece6; font: 500 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
+.ex-bg { position: absolute; inset: 0; background: rgba(14, 13, 12, .95); opacity: 0; transition: opacity .2s var(--ease); }
+.ex[data-open="true"] .ex-bg { opacity: 1; }
+.ex[data-closing="true"] .ex-bg { opacity: 0; transition-duration: .14s; }
+.ex-frame { position: absolute; overflow: hidden; transform-origin: 0 0; will-change: transform; }
+.ex-frame img { display: block; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; }
+.ex-detail { position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom)); display: flex; align-items: baseline; gap: 10px; opacity: 0; transform: translateY(8px); transition: opacity .2s var(--ease), transform .2s var(--ease); }
+.ex[data-open="true"] .ex-detail { opacity: 1; transform: none; transition-delay: .08s; }
+.ex[data-closing="true"] .ex-detail { opacity: 0; transition-duration: .1s; transition-delay: 0s; }
+.ex-num { font: 700 64px/0.9 "Avenir Next", Futura, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.ex-of { font: 500 13px/1 var(--mono); opacity: .55; }
+.ex-cap { max-width: 34ch; font-size: 13px; opacity: .75; margin-left: 14px; }
+.ex-close { position: absolute; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); width: 44px; height: 44px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .12); color: #fff; display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity .2s var(--ease), transform .16s var(--ease), background-color .16s var(--ease); }
+.ex[data-open="true"] .ex-close { opacity: 1; }
+.ex-close:active { transform: scale(.97); }
+.ex-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } .stage { min-height: 420px; } .ex-num { font-size: 48px; } .ex-cap { display: none; } }
+@media (prefers-reduced-motion: reduce) { .tabs button, .seg button, .toggle, .toggle::after { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Strip mockups</h1>
+    <div class="tabs" role="tablist" aria-label="Variant">
+      <button role="tab" aria-selected="true" data-v="a">A. Ruler</button>
+      <button role="tab" aria-selected="false" data-v="b">B. Numbers</button>
+      <button role="tab" aria-selected="false" data-v="c">C. Minimal</button>
+    </div>
+  </div>
+  <div class="layout">
+    <section class="stage" id="stage" data-theme="dark" aria-label="Mockup">
+      <div id="mount"></div>
+      <span class="stage-note" id="note"></span>
+    </section>
+    <aside class="panel" aria-label="Options">
+      <h2>Behaviour</h2>
+      <label class="row"><span>Ticks</span><input class="toggle" type="checkbox" data-o="ticks"></label>
+      <label class="row"><span>Hover the ticks</span><input class="toggle" type="checkbox" data-o="rulerHover"></label>
+      <div class="row"><span>Numbers</span><span class="seg" data-o="numbers"><button data-val="frame">Frame</button><button data-val="fraction">1 / 24</button><button data-val="off">Off</button></span></div>
+      <label class="row"><span>Focus lift</span><input class="toggle" type="checkbox" data-o="feedback"></label>
+      <label class="row"><span>Grow</span><input type="range" min="1" max="2" step="0.05" data-o="grow"></label>
+      <div class="sep"></div>
+      <label class="row"><span>Drag</span><input class="toggle" type="checkbox" data-o="drag"></label>
+      <label class="row"><span>Inertia</span><input class="toggle" type="checkbox" data-o="inertia"></label>
+      <label class="row"><span>Snap</span><input class="toggle" type="checkbox" data-o="snap"></label>
+      <div class="row"><span>Wheel</span><span class="seg" data-o="wheel"><button data-val="both">Both</button><button data-val="x">Side</button><button data-val="y">Up</button><button data-val="off">Off</button></span></div>
+      <div class="row"><span>Fluid</span><span class="seg" data-o="fluid"><button data-val="off">Off</button><button data-val="lerp">Lerp</button><button data-val="chain">Chain</button><button data-val="bend">Bend</button></span></div>
+      <label class="row"><span>Tap to expand</span><input class="toggle" type="checkbox" data-o="expand"></label>
+      <div class="sep"></div>
+      <div class="row"><span>Look</span><span class="seg" data-o="look"><button data-val="stories">Stories</button><button data-val="bars">Bars</button></span></div>
+      <div class="row"><span>Stage</span><span class="seg" data-o="theme"><button data-val="dark">Dark</button><button data-val="light">Light</button></span></div>
+      <div class="row"><span>Motion</span><span class="seg" data-o="motion"><button data-val="system">System</button><button data-val="reduce">Reduced</button></span></div>
+      <div class="log" id="log" aria-live="off"></div>
+    </aside>
+  </div>
+</main>
+
+<script>
+// ---------- Pictures (the docs photos, CC0) ----------
+const IDS = ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", "h17", "h11", "h03", "h18"];
+const NAMES = { h04: "Seaside resort pool at evening", h01: "Resort Leisure", h10: "Mauritius beach side resort pool", h16: "Modern Room", h21: "Luxury resort outdoor spa", h23: "Luxury resort lobby", h30: "Furniture Patio", h38: "Tropical pool vacation", h17: "Bedroom", h11: "Hotel terrace sea", h03: "Exotic Maldives pool resort", h18: "Luxury bathroom interior" };
+const PHOTOS = [...IDS, ...IDS].map((id) => ({ thumb: `../../docs/photos/${id}-800.jpg`, full: `../../docs/photos/${id}.jpg`, alt: NAMES[id] }));
+
+// ---------- Variants ----------
+const PRESETS = {
+  a: { ticks: true, rulerHover: true, numbers: "off", feedback: true, grow: 1.55, drag: true, inertia: true, snap: true, wheel: "both", fluid: "bend", expand: true, look: "stories", theme: "dark", motion: "system", note: "A. Ruler of ticks over a strip of story cards" },
+  b: { ticks: true, rulerHover: true, numbers: "frame", feedback: true, grow: 1.3, drag: true, inertia: true, snap: true, wheel: "both", fluid: "chain", expand: true, look: "bars", theme: "dark", motion: "system", note: "B. Ticks with the number frame, tall bars" },
+  c: { ticks: false, rulerHover: false, numbers: "fraction", feedback: false, grow: 1.18, drag: true, inertia: true, snap: true, wheel: "both", fluid: "lerp", expand: true, look: "stories", theme: "light", motion: "system", note: "C. Minimal: the strip and a quiet count" },
+};
+let O = { ...PRESETS.a };
+
+// ---------- Physics (critically damped spring, iOS-like projection) ----------
+const K = 380, C = 39;
+const step = (x, v, t, dt) => { const a = -K * (x - t) - C * v; const nv = v + a * dt; return [x + nv * dt, nv]; };
+const project = (v) => ((v / 1000) * 0.998) / (1 - 0.998);
+const bump = (d, reach = 1) => { const t = Math.max(0, 1 - Math.abs(d) / reach); return t * t * (3 - 2 * t); };
+const reduced = () => O.motion === "reduce" || matchMedia("(prefers-reduced-motion: reduce)").matches;
+const pad = (n) => String(n).padStart(2, "0");
+const log = (s) => { const el = document.getElementById("log"); el.textContent = (s + "\n" + el.textContent).split("\n").slice(0, 4).join("\n"); };
+
+// ---------- The strip ----------
+function Strip(mount, o) {
+  const n = PHOTOS.length;
+  const root = document.createElement("div");
+  root.className = `dl ${o.look}`;
+  root.setAttribute("role", "region");
+  root.setAttribute("aria-roledescription", "carousel");
+  root.setAttribute("aria-label", "Pictures");
+  mount.replaceChildren(root);
+
+  const head = document.createElement("div");
+  head.className = "dl-head";
+  head.setAttribute("aria-hidden", "true");
+  const ruler = document.createElement("div");
+  ruler.className = "ruler";
+  const ticks = PHOTOS.map(() => ruler.appendChild(Object.assign(document.createElement("i"), { className: "tick" })));
+  const nums = document.createElement("div");
+  nums.className = o.numbers === "fraction" ? "nums frac" : "nums";
+  const nPrev = document.createElement("span"), nCur = document.createElement("span"), nNext = document.createElement("span");
+  nPrev.className = nNext.className = "n"; nCur.className = "cur";
+  nums.append(nPrev, nCur, nNext);
+  if (o.ticks) head.append(ruler);
+  // The frame sits beside the ticks; a plain count sits beside them too, or under the strip when there are no ticks.
+  if (o.numbers === "frame" || (o.numbers === "fraction" && o.ticks)) head.append(nums);
+  head.hidden = !head.children.length;
+
+  const vp = document.createElement("div");
+  vp.className = "vp";
+  const cards = PHOTOS.map((p, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "card"; b.tabIndex = -1;
+    b.setAttribute("aria-label", `Picture ${i + 1} of ${n}. ${p.alt}`);
+    const img = document.createElement("img");
+    img.src = p.thumb; img.alt = ""; img.decoding = "async"; img.draggable = false;
+    b.append(img);
+    vp.append(b);
+    return b;
+  });
+  const minCount = document.createElement("div");
+  minCount.className = "min-count";
+  minCount.hidden = !(o.numbers === "fraction" && !head.contains(nums));
+  const sr = Object.assign(document.createElement("span"), { className: "sr" });
+  sr.setAttribute("aria-live", "polite");
+  sr.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)";
+  root.append(head, vp, minCount, sr);
+
+  // Sizes (read once and on resize).
+  let W, H, GAP, VW, rx = 0, rw = 0;
+  const measure = () => {
+    const cs = getComputedStyle(root);
+    W = parseFloat(cs.getPropertyValue("--w")); H = parseFloat(cs.getPropertyValue("--h")); GAP = parseFloat(cs.getPropertyValue("--gap"));
+    VW = vp.clientWidth;
+    vp.style.height = `${Math.ceil(H * o.grow + 12)}px`;
+    const r = ruler.getBoundingClientRect(); rx = r.left; rw = r.width;
+  };
+
+  let pos = 5, target = 5, vel = 0, held = false, focus = null, at = -1, raf = 0, last = 0, speed = 0;
+  const cpos = PHOTOS.map(() => 5);
+  const paint = () => {
+    const s = PHOTOS.map((_, i) => 1 + (o.grow - 1) * bump(i - pos));
+    const c = []; let x = 0;
+    for (let i = 0; i < n; i++) { const w = W * s[i]; x = i === 0 ? w / 2 : x + (W * s[i - 1]) / 2 + GAP + w / 2; c.push(x); }
+    const p = Math.max(0, Math.min(n - 1, pos)), i0 = Math.floor(p), f = p - i0;
+    const mid = i0 >= n - 1 ? c[n - 1] + (pos - (n - 1)) * (W + GAP) : c[i0] + (c[i0 + 1] - c[i0]) * f + (pos < 0 ? pos * (W + GAP) : 0);
+    const off = VW / 2 - mid;
+    const pitch = W + GAP;
+    // Bend: speed lifts the strip into a bulge around the middle; each card takes the slope of the bulge, so
+    // their tops and bottoms trace a curve. It flattens as the strip slows.
+    const amt = o.fluid === "bend" ? Math.min(1, Math.abs(speed) / 2200) * 0.22 : 0;
+    const reach = VW * 0.42;
+    const hAt = (x) => 1 + amt * bump(x - VW / 2, reach);
+    for (let i = 0; i < n; i++) {
+      // Chain: each card trails the strip by its own lag (cpos), farther cards a little more.
+      const lag = o.fluid === "chain" ? (cpos[i] - pos) * pitch : 0;
+      const left = off + c[i] - W / 2 - lag;
+      if (left > VW + W * 2 || left < -W * 3) { cards[i].style.visibility = "hidden"; continue; }
+      cards[i].style.visibility = "";
+      if (amt > 0.001) {
+        const cx = left + W / 2, m = hAt(cx), slope = ((hAt(cx + W / 2) - hAt(cx - W / 2)) * H * s[i]) / 2 / (W * s[i]);
+        cards[i].style.transform = `translate3d(${left}px, 0, 0) skewY(${(-Math.atan(slope) * 180) / Math.PI}deg) scale(${s[i]}, ${s[i] * m})`;
+      } else cards[i].style.transform = `translate3d(${left}px, 0, 0) scale(${s[i]})`;
+      cards[i].style.opacity = o.feedback ? String(1 - 0.5 * (1 - bump(i - pos, 3))) : "1";
+    }
+    const fp = focus ?? pos;
+    ticks.forEach((t, i) => {
+      const lift = o.feedback ? bump(i - fp, 3) : i === Math.round(fp) ? 1 : 0;
+      t.style.transform = `scaleY(${1 + 1.3 * lift})`;
+      t.style.opacity = String(0.28 + 0.72 * lift);
+    });
+  };
+  const setAt = (i, how) => {
+    if (i === at) return;
+    at = i;
+    cards.forEach((c, k) => { c.tabIndex = k === at ? 0 : -1; c.toggleAttribute("aria-current", k === at); if (k === at) c.setAttribute("aria-current", "true"); });
+    if (o.numbers === "fraction") { nPrev.textContent = ""; nCur.textContent = pad(at + 1); nNext.textContent = `/ ${pad(n)}`; }
+    else { nPrev.textContent = at > 0 ? pad(at) : ""; nCur.textContent = pad(at + 1); nNext.textContent = at < n - 1 ? pad(at + 2) : ""; }
+    minCount.textContent = `${pad(at + 1)} / ${pad(n)}`;
+    nums.classList.remove("bump"); void nums.offsetWidth; nums.classList.add("bump");
+    sr.textContent = `Picture ${at + 1} of ${n}. ${PHOTOS[at].alt}`;
+    if (how) log(`change ${at + 1} (${how})`);
+  };
+  let how = "";
+  const frame = (now) => {
+    const dt = Math.min(1 / 15, last ? (now - last) / 1000 : 1 / 60);
+    last = now;
+    let busy = held;
+    const before = pos;
+    if (reduced()) { if (!held || o.fluid !== "off") { pos = target; vel = 0; } }
+    else if (o.fluid !== "off") {
+      // Damped follow: the position eases toward the target every frame (quicker while held), so a drag trails the
+      // finger a touch and a fling decays smoothly, about 7% less speed each frame, with no overshoot.
+      const k = held ? 16 : 4.6;
+      pos += (target - pos) * (1 - Math.exp(-dt * k));
+      if (Math.abs(target - pos) * W < 0.3 && !held) pos = target; else busy = true;
+    } else if (!held) {
+      const k = Math.max(1, Math.ceil(dt * 120)), h = dt / k;
+      for (let j = 0; j < k; j++) [pos, vel] = step(pos, vel, target, h);
+      if (Math.abs(pos - target) * W < 0.25 && Math.abs(vel) * W < 2) { pos = target; vel = 0; } else busy = true;
+    }
+    // Speed in px/s, smoothed, for the bend.
+    speed += (((pos - before) * (W + GAP)) / Math.max(dt, 0.001) - speed) * 0.25;
+    if (Math.abs(speed) > 20) busy = true; else if (!busy) speed = 0;
+    // Chain: every card eases toward the strip at its own rate, nearer the middle first.
+    if (o.fluid === "chain") for (let i = 0; i < n; i++) {
+      const k = 30 / (1 + 0.12 * Math.abs(i - pos));
+      cpos[i] += (pos - cpos[i]) * (1 - Math.exp(-dt * k));
+      if (Math.abs(cpos[i] - pos) * W > 0.3) busy = true; else cpos[i] = pos;
+    }
+    paint();
+    setAt(Math.max(0, Math.min(n - 1, Math.round(pos))), how);
+    if (busy) raf = requestAnimationFrame(frame); else { raf = 0; last = 0; cards.forEach((c) => (c.style.willChange = "")); }
+  };
+  const kick = () => { cards.forEach((c) => (c.style.willChange = "transform")); if (!raf) raf = requestAnimationFrame(frame); };
+  const clampI = (i) => Math.max(0, Math.min(n - 1, i));
+  const go = (i, h, v = 0) => { how = h; target = clampI(Math.round(i)); vel = reduced() ? 0 : v; if (reduced()) pos = target; kick(); };
+  const band = (p) => (p < 0 ? -(1 - 1 / (1 - p * 0.35)) / 0.35 * 0.6 : p > n - 1 ? n - 1 + ((1 - 1 / (1 + (p - n + 1) * 0.35)) / 0.35) * 0.6 : p);
+
+  // Drag: 1:1 while held, then the release velocity is projected to the nearest picture.
+  let d = null, swallow = false;
+  vp.addEventListener("pointerdown", (e) => {
+    swallow = false; // a touch drag fires no click, so the flag must not outlive it
+    if (!o.drag || !e.isPrimary || e.button > 0) return;
+    d = { id: e.pointerId, x: e.clientX, p0: pos, moved: false, s: [{ x: e.clientX, t: e.timeStamp }] };
+  });
+  vp.addEventListener("pointermove", (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x;
+    d.s.push({ x: e.clientX, t: e.timeStamp }); if (d.s.length > 8) d.s.shift();
+    if (!d.moved) { if (Math.abs(dx) < 6) return; d.moved = true; held = true; vel = 0; vp.setPointerCapture(e.pointerId); vp.classList.add("grabbing"); }
+    how = "drag"; target = band(d.p0 - dx / (W + GAP)); if (o.fluid === "off") pos = target; kick();
+  });
+  const up = (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const g = d; d = null; vp.classList.remove("grabbing");
+    if (!g.moved) return;
+    swallow = true; held = false;
+    const lastS = g.s[g.s.length - 1];
+    let vx = 0;
+    if (e.timeStamp - lastS.t < 100) { const first = g.s.find((s) => lastS.t - s.t <= 100) || g.s[0]; const dt = (lastS.t - first.t) / 1000; vx = dt > 0 ? (lastS.x - first.x) / dt : 0; }
+    const end = (o.fluid === "off" ? pos : target) + (o.inertia ? project(-vx) : 0) / (W + GAP);
+    target = o.snap ? clampI(Math.round(end)) : Math.max(0, Math.min(n - 1, end));
+    vel = o.inertia ? -vx / (W + GAP) : 0;
+    kick();
+  };
+  vp.addEventListener("pointerup", up);
+  vp.addEventListener("pointercancel", up);
+
+  // Wheel: both axes by default, 1:1 while turning, snap when it stops; the page scrolls on at either end.
+  let idle = 0, acc = 0;
+  vp.addEventListener("wheel", (e) => {
+    if (e.ctrlKey || o.wheel === "off") return;
+    const k = e.deltaMode === 1 ? 16 : 1;
+    const dl = (o.wheel === "x" ? e.deltaX : o.wheel === "y" ? e.deltaY : Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * k;
+    if (!dl) return;
+    if ((pos <= 0 && dl < 0) || (pos >= n - 1 && dl > 0)) return;
+    e.preventDefault();
+    how = "wheel";
+    if (reduced()) { acc += dl; if (Math.abs(acc) > 40) { go(at + Math.sign(acc), "wheel"); acc = 0; } return; }
+    held = true; target = Math.max(0, Math.min(n - 1, target + dl / (W + GAP))); if (o.fluid === "off") pos = target; kick();
+    clearTimeout(idle);
+    idle = setTimeout(() => { held = false; target = o.snap ? clampI(Math.round(target)) : target; kick(); }, 140);
+  }, { passive: false });
+
+  // The ruler: hover with a mouse, or drag (touch too), runs through the pictures; ticks near the pointer lift.
+  let scrub = false;
+  const rpos = (e) => Math.max(0, Math.min(n - 1, ((e.clientX - rx) / rw) * (n - 1)));
+  ruler.addEventListener("pointermove", (e) => {
+    if (!scrub && !(e.pointerType === "mouse" && o.rulerHover)) return;
+    focus = rpos(e); go(focus, "ruler");
+  });
+  ruler.addEventListener("pointerdown", (e) => { scrub = true; measure(); ruler.setPointerCapture(e.pointerId); focus = rpos(e); go(focus, "ruler"); });
+  ruler.addEventListener("pointerup", () => { scrub = false; });
+  ruler.addEventListener("pointerleave", () => { if (!scrub) { focus = null; kick(); } });
+
+  // Tap a picture: it springs up into the large view. Keys: left and right, Home, End, Enter.
+  vp.addEventListener("click", (e) => {
+    if (swallow) { swallow = false; e.preventDefault(); e.stopPropagation(); return; }
+    const card = e.target.closest(".card");
+    if (!card) return;
+    const i = cards.indexOf(card);
+    if (!o.expand) { go(i, "tap"); return; }
+    go(i, "tap");
+    expand(api, i);
+  }, true);
+  root.addEventListener("keydown", (e) => {
+    const map = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: n - 1 };
+    if (e.key in map) { e.preventDefault(); const i = clampI(map[e.key]); go(i, "key"); cards[i].tabIndex = 0; cards[i].focus({ preventScroll: true }); }
+  });
+
+  const onResize = () => { measure(); paint(); };
+  window.addEventListener("resize", onResize);
+  measure(); setAt(5, ""); paint();
+  const api = { get at() { return at; }, card: (i) => cards[i], go: (i) => { pos = target = clampI(i); vel = 0; cpos.fill(pos); speed = 0; paint(); setAt(clampI(i), "lightbox"); }, n, destroy() { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); } };
+  return api;
+}
+
+// ---------- Expanded view: a shared-element spring from the card, with the number detail ----------
+let ex = null;
+function expand(strip, i) {
+  if (ex) return;
+  const n = strip.n;
+  const back = strip.card(i);
+  const el = document.createElement("div");
+  el.className = "ex"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-label", "Picture");
+  el.innerHTML = '<div class="ex-bg"></div><div class="ex-frame"><img alt=""></div><div class="ex-detail"><span class="ex-num"></span><span class="ex-of"></span><span class="ex-cap"></span></div><button class="ex-close" type="button" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
+  document.body.append(el);
+  document.documentElement.style.overflow = "hidden";
+  const frame = el.querySelector(".ex-frame"), img = frame.querySelector("img");
+  const num = el.querySelector(".ex-num"), of = el.querySelector(".ex-of"), cap = el.querySelector(".ex-cap");
+  const R = getComputedStyle(back).borderRadius;
+  let cur = i, raf = 0, box, vel = [0, 0, 0, 0], tgt, closing = false;
+  const label = () => { num.textContent = pad(cur + 1); of.textContent = `/ ${pad(n)}`; cap.textContent = PHOTOS[cur].alt; };
+  const rest = (aspect) => {
+    const mw = innerWidth - 48, mh = innerHeight - (innerWidth < 860 ? 200 : 170);
+    let w = mw, h = w / aspect; if (h > mh) { h = mh; w = h * aspect; }
+    return { x: (innerWidth - w) / 2, y: Math.max(56, (innerHeight - 100 - h) / 2), w, h };
+  };
+  const rectOf = (k) => { const r = strip.card(k).querySelector("img").getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
+  let base;
+  const paint = () => {
+    const sx = box.w / base.w, sy = box.h / base.h, c = Math.max(sx, sy);
+    frame.style.transform = `translate3d(${box.x - base.x}px, ${box.y - base.y}px, 0) scale(${sx}, ${sy})`;
+    img.style.transform = `scale(${c / sx}, ${c / sy})`;
+    const left = Math.min(1, Math.abs(box.w - tgt.w) / Math.max(1, tgt.w));
+    const r = parseFloat(R) * (closing ? 1 - left : left) + 6 * (closing ? left : 1 - left);
+    frame.style.borderRadius = `${r / sx}px / ${r / sy}px`;
+  };
+  const run = (k, c) => new Promise((done) => {
+    cancelAnimationFrame(raf);
+    let lt = 0;
+    const tick = (now) => {
+      const dt = Math.min(1 / 15, lt ? (now - lt) / 1000 : 1 / 60); lt = now;
+      let moving = false;
+      if (reduced()) box = { ...tgt };
+      else for (const [j, key] of ["x", "y", "w", "h"].entries()) {
+        let x = box[key], v = vel[j];
+        const s = Math.max(1, Math.ceil(dt * 120)), h = dt / s;
+        for (let q = 0; q < s; q++) { const a = -k * (x - tgt[key]) - c * v; v += a * h; x += v * h; }
+        box[key] = x; vel[j] = v;
+        if (Math.abs(x - tgt[key]) > 0.25 || Math.abs(v) > 2) moving = true;
+      }
+      paint();
+      if (moving) raf = requestAnimationFrame(tick); else done();
+    };
+    raf = requestAnimationFrame(tick);
+  });
+  const open = async () => {
+    label();
+    img.src = PHOTOS[cur].full;
+    await img.decode().catch(() => {});
+    base = rest(img.naturalWidth / img.naturalHeight);
+    Object.assign(frame.style, { left: base.x + "px", top: base.y + "px", width: base.w + "px", height: base.h + "px" });
+    box = rectOf(cur); tgt = base;
+    back.style.visibility = "hidden";
+    paint();
+    requestAnimationFrame(() => (el.dataset.open = "true"));
+    log(`expand ${cur + 1}`);
+    el.querySelector(".ex-close").focus({ preventScroll: true });
+    await run(380, 39);
+  };
+  const close = async () => {
+    if (closing) return;
+    closing = true; el.dataset.closing = "true";
+    strip.go(cur);
+    tgt = rectOf(cur);
+    await run(520, 46);
+    strip.card(cur).style.visibility = "";
+    el.remove(); ex = null;
+    document.documentElement.style.overflow = "";
+    strip.card(cur).focus({ preventScroll: true });
+    log("close");
+  };
+  const move = async (d) => {
+    const k = Math.max(0, Math.min(n - 1, cur + d));
+    if (k === cur) return;
+    strip.card(cur).style.visibility = "";
+    cur = k; label(); strip.go(cur); strip.card(cur).style.visibility = "hidden";
+    const next = new Image(); next.src = PHOTOS[cur].full; await next.decode().catch(() => {});
+    img.animate([{ opacity: 1 }, { opacity: 0 }], { duration: reduced() ? 0 : 120, easing: "ease-out" }).onfinish = () => {
+      img.src = next.src;
+      const b = rest(next.naturalWidth / next.naturalHeight);
+      box = { ...box }; tgt = b; base = b;
+      Object.assign(frame.style, { left: b.x + "px", top: b.y + "px", width: b.w + "px", height: b.h + "px" });
+      box = { ...b }; paint();
+      img.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduced() ? 0 : 200, easing: "cubic-bezier(.23,1,.32,1)" });
+    };
+  };
+  el.addEventListener("click", (e) => { if (e.target.closest(".ex-close") || !e.target.closest(".ex-detail")) close(); });
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); move(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
+    else if (e.key === "Tab") { e.preventDefault(); el.querySelector(".ex-close").focus(); }
+  });
+  ex = { close };
+  open();
+}
+
+// ---------- Panel ----------
+const mount = document.getElementById("mount"), stage = document.getElementById("stage");
+let strip = null;
+const build = () => {
+  strip?.destroy();
+  stage.dataset.theme = O.theme;
+  document.getElementById("note").textContent = O.note;
+  strip = Strip(mount, O);
+  for (const el of document.querySelectorAll("[data-o]")) {
+    const k = el.dataset.o;
+    if (el.type === "checkbox") el.checked = !!O[k];
+    else if (el.type === "range") el.value = O[k];
+    else for (const b of el.querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.val === O[k]));
+  }
+};
+for (const el of document.querySelectorAll("[data-o]")) {
+  const k = el.dataset.o;
+  if (el.tagName === "INPUT") el.addEventListener("input", () => { O[k] = el.type === "checkbox" ? el.checked : parseFloat(el.value); build(); });
+  else el.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; O[k] = b.dataset.val; build(); });
+}
+for (const t of document.querySelectorAll('[role="tab"]')) t.addEventListener("click", () => {
+  for (const x of document.querySelectorAll('[role="tab"]')) x.setAttribute("aria-selected", String(x === t));
+  O = { ...PRESETS[t.dataset.v] };
+  build();
+});
+build();
+</script>
+</body>
+</html>

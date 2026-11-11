@@ -39,6 +39,9 @@
 .fk-procession { position: relative; overflow: hidden; aspect-ratio: 4 / 3; border-radius: var(--fk-radius); background: var(--fk-placeholder); isolation: isolate; }
 .fk-track { display: flex; width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; outline: none; touch-action: pan-x pan-y; color: inherit; text-decoration: none; cursor: default; }
 .fk-track::-webkit-scrollbar { display: none; }
+/* Our ring is on the slider, not the track: win over a site's plain :focus-visible rule. */
+.fk-procession .fk-track:focus, .fk-procession .fk-track:focus-visible { outline: none; }
+.fk-pic { display: contents; }
 .fk-track.fk-proximity { scroll-snap-type: x proximity; }
 .fk-track.fk-link { cursor: pointer; }
 .fk-track.fk-zoom-cursor { cursor: zoom-in; }
@@ -105,6 +108,8 @@
 .fk-unfurl-action:focus-visible { outline: var(--fk-focus-width) solid var(--fk-focus-dark); outline-offset: 2px; }
 .fk-unfurl-media { position: absolute; z-index: 1; overflow: hidden; display: grid; place-items: center; }
 .fk-unfurl-media[hidden] { display: none; }
+.fk-unfurl-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.fk-unfurl-play { position: relative; z-index: 1; }
 .fk-unfurl-player { display: block; width: 100%; max-width: none; height: 100%; border: 0; background: #000; }
 .fk-unfurl-play { width: 64px; height: 64px; padding: 0 0 0 4px; border: 0; border-radius: 999px; display: grid; place-items: center; background: rgba(255, 255, 255, .92); color: #16130f; cursor: pointer; box-shadow: 0 4px 24px rgba(0, 0, 0, .35); transition: transform .16s var(--fk-ease); }
 .fk-unfurl-play svg path { fill: currentColor; }
@@ -130,4 +135,43 @@
 @media (prefers-reduced-motion: reduce) {
   .fk-unfurl-bg { animation-duration: .15s; }
   .fk-dot, .fk-arrow, .fk-play, .fk-unfurl-btn, .fk-zoomable .fk-photo { transition: none; }
+}
+
+/* ---------- drumline ---------- */
+.fk-drumline { --fk-dl-w: 72px; --fk-dl-h: 128px; --fk-dl-gap: 12px; --fk-dl-card-radius: 14px; --fk-dl-ink: currentColor; position: relative; display: grid; gap: 14px; }
+.fk-drumline.fk-dl-bars { --fk-dl-w: 44px; --fk-dl-h: 176px; --fk-dl-gap: 10px; --fk-dl-card-radius: 3px; }
+.fk-dl-head { display: flex; align-items: center; justify-content: center; gap: 18px; min-height: 28px; color: var(--fk-dl-ink); }
+.fk-dl-ruler { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px; cursor: ew-resize; touch-action: none; }
+.fk-dl-tick { display: block; flex: none; width: 1px; height: 10px; background: currentColor; opacity: .32; transform-origin: 50% 50%; }
+.fk-dl-numbers { display: flex; align-items: center; gap: 8px; font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.fk-dl-numbers .fk-dl-n { opacity: .45; min-width: 2ch; text-align: center; }
+.fk-dl-numbers .fk-dl-n:empty { visibility: hidden; }
+.fk-dl-cur { min-width: 2ch; padding: 3px 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px currentColor; text-align: center; }
+.fk-dl-fraction .fk-dl-cur { box-shadow: none; padding: 0; }
+.fk-dl-tick-in .fk-dl-cur { animation: fk-dl-in .16s var(--fk-ease); }
+@keyframes fk-dl-in { from { opacity: .35; transform: translateY(2px); } }
+.fk-drumline .fk-dl-viewport:focus-visible { outline: none; }
+.fk-dl-viewport { position: relative; overflow: hidden; touch-action: pan-y; cursor: grab; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.fk-dl-viewport.fk-dl-dragging { cursor: grabbing; }
+.fk-dl-strip { position: absolute; inset: 0; margin: 0; padding: 0; }
+.fk-dl-card { box-sizing: border-box; position: absolute; left: 0; top: 50%; width: var(--fk-dl-w); height: var(--fk-dl-h); margin: calc(var(--fk-dl-h) / -2) 0 0; padding: 0; border: 0; border-radius: var(--fk-dl-card-radius); overflow: hidden; background: var(--fk-placeholder); cursor: zoom-in; transform-origin: 50% 50%; -webkit-appearance: none; appearance: none; font: inherit; }
+.fk-dl-img { display: block; width: 100%; max-width: none; height: 100%; margin: 0; object-fit: cover; pointer-events: none; -webkit-user-drag: none; background-position: center; background-size: cover; }
+.fk-dl-card:focus-visible { outline: var(--fk-focus-width) solid var(--fk-focus); outline-offset: 3px; }
+.fk-dl-card[aria-current="true"] { z-index: 1; }
+.fk-dl-canvas { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 2; }
+.fk-dl-gl .fk-dl-img { visibility: hidden; }
+.fk-drumline.fk-dl-gl .fk-dl-card { background: transparent; }
+.fk-dl-numbers.fk-dl-below { justify-content: center; opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .fk-dl-tick-in .fk-dl-cur { animation: none; } }
+
+/* ---------- the lightbox's filmstrip (unfurl strip option) ---------- */
+.fk-unfurl-strip { position: absolute; left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); height: var(--fk-strip-size, 150px); z-index: 1; color: #fff; transition: opacity .16s var(--fk-ease); }
+.fk-unfurl-strip.fk-drumline { --fk-dl-w: 36px; --fk-dl-h: 56px; --fk-dl-gap: 8px; --fk-dl-card-radius: 8px; gap: 6px; }
+.fk-unfurl-strip.fk-drumline.fk-dl-bars { --fk-dl-w: 20px; --fk-dl-h: 64px; --fk-dl-gap: 6px; --fk-dl-card-radius: 2px; }
+.fk-unfurl-strip .fk-dl-card { background: rgba(255, 255, 255, .08); }
+.fk-unfurl[data-strip="true"] .fk-unfurl-cap { bottom: calc(var(--fk-strip-size, 150px) + 18px + env(safe-area-inset-bottom, 0px)); }
+.fk-unfurl[data-strip="true"] .fk-unfurl-prev, .fk-unfurl[data-strip="true"] .fk-unfurl-next { margin-top: calc(-22px - var(--fk-strip-size, 150px) / 2); }
+.fk-unfurl[data-phase="opening"] .fk-unfurl-strip, .fk-unfurl[data-phase="closing"] .fk-unfurl-strip { opacity: 0; }
+@media (max-width: 719px) {
+  .fk-unfurl[data-strip="true"] .fk-unfurl-prev, .fk-unfurl[data-strip="true"] .fk-unfurl-next { margin-top: 0; bottom: calc(var(--fk-strip-size, 150px) + 10px + env(safe-area-inset-bottom, 0px)); }
 }

@@ -6,17 +6,45 @@ Said FRAN-kah.
 
 Along the Fante coast of Ghana, each Asafo company has its frankaa: flags of bold appliqué, pictures cut from coloured cloth and sewn onto a field. At festivals they are carried one after another in procession, then unfurled so the whole picture can be seen.
 
-This package is named after them, and has two parts:
+This package is named after them, and has three parts:
 
 - **procession**, a photo slider. A native scroll-snap track, so a swipe follows the finger 1:1 and keeps its momentum. Dots, arrows on hover, lazy loading, and optional loop and autoplay.
 - **unfurl**, a photo lightbox. The photo lifts out of its spot and springs to full view, moves to the next photo with an effect, and springs back when closed. WebGL shader effects (built-in or your own) or a CSS renderer that uses transform and opacity only.
+- **drumline (dondo, the talking drum)**, a strip of pictures under a ruler of ticks. Drag, flick, wheel either way or run along the ruler; the picture in focus grows and a tap opens it in the lightbox. It also sits under the lightbox as its filmstrip.
 
-Plain TypeScript with no dependencies, and thin optional React bindings. Live demo and playground: https://jabclari.github.io/frankaa/
+All three take the same list of items, and combining them is one option. Plain TypeScript with no dependencies, and thin optional React bindings. Live demo and playground: https://jabclari.github.io/frankaa/
 
 ## Install
 
 ```sh
 npm install frankaa
+```
+
+## One list for every part
+
+Every part takes the same items, as the first argument after the element (`procession(el, items, options)`, `drumline(el, items, options)`, `unfurl(items, options)`) or as `items` in the options. Each picks the file it needs.
+
+| Field | Used by | |
+| --- | --- | --- |
+| `src` | the slider, and the others when nothing else is set | The picture. A plain string is taken as `src` |
+| `thumb` | drumline, the lightbox's filmstrip | A small file |
+| `full` | the lightbox | A large file |
+| `srcset`, `sizes` | the slider (and the lightbox when there is no `full`) | Sizes of `src` |
+| `sources` | the slider | Art direction: `[{ media, srcset, sizes?, type? }]`, drawn as `<picture>` |
+| `alt`, `caption`, `title` | all | |
+| `width`, `height` | the slider | So nothing shifts while it loads |
+| `placeholder` | all | A colour, or an image address (a tiny thumbnail or a decoded blurhash) |
+
+Videos are `{ type: "video", provider, src, poster? }` (below). Without a poster, an mp4 shows its first frame in the lightbox, and a neutral 16:9 still stands in elsewhere.
+
+```js
+const items = [
+  { src: "/terrace-800.jpg", full: "/terrace-2000.jpg", thumb: "/terrace-200.jpg", alt: "Terrace" },
+  "/pool.jpg",
+];
+procession(card, items);
+unfurl(items, { start: 1, strip: "ruler" }); // the lightbox with a drumline filmstrip
+drumline(strip, items, { preset: "numbers" });
 ```
 
 ## Quick start
@@ -64,6 +92,8 @@ export function Card({ photos }) {
 }
 ```
 
+`<Drumline items={items} preset="ruler" />` is the strip, and `useUnfurl(items, { strip: "ruler" })` gives the lightbox its filmstrip. Unmounting a component closes its lightbox without firing `onCloseStart` or `onCloseEnd` (it fires `onDestroy`), and React StrictMode's practice unmount in development does nothing, so a lightbox opened on mount stays open.
+
 The bindings are safe to import during server rendering: nothing touches the DOM until an effect runs. In the Next.js App Router, use them from a client component as above.
 
 Your own React controls in the top bar keep your context through a portal; render `lightbox.portal` anywhere:
@@ -81,7 +111,7 @@ return <>{grid}{lightbox.portal}</>;
 
 ## procession (the slider)
 
-`procession(element, options)` turns an element into a slider and returns its controls. The element keeps its own children. It is 4:3 by default; size it with CSS.
+`procession(element, items, options)` (or `procession(element, { items, ...options })`) turns an element into a slider and returns its controls. The element keeps its own children. It is 4:3 by default; size it with CSS.
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
@@ -96,6 +126,7 @@ return <>{grid}{lightbox.portal}</>;
 | `autoplay` | `number \| false` | `false` | Move every so many ms (at least 1500). Pauses on hover, focus, a hidden tab, off screen, and with reduced motion. Adds a pause button |
 | `priority` | `boolean` | `false` | The first photo is above the fold: load it at once |
 | `lazyMargin` | `string` | `"100px"` | How near the screen before the other photos load |
+| `preload` | `"near" \| "idle" \| false` | `"near"` | When the other photos load: near the screen; also the next one when the page is idle; or only when touched or moved |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: steps jump, no autoplay |
 | `announce` | `boolean` | `true` | Announce changes through a polite live region |
 | `href` | `string` | | Make the slider a link (the track is an `<a href>`), so Cmd, Ctrl and middle click open it as usual |
@@ -110,9 +141,46 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 
 `onSelect(index, img, event)` gets the event, so you can leave modified clicks to the browser or call `preventDefault()`. With `zoom`, a single touch tap waits a moment to tell it from a double tap.
 
+## drumline (the strip)
+
+`drumline(element, items, options)` turns an element into the strip and returns its controls. A preset sets its look; every setting can also be given on its own, and wins over the preset.
+
+| Preset | Ticks | Numbers | Cards | Fluid | Colour focus |
+| --- | --- | --- | --- | --- | --- |
+| `"ruler"` (default) | yes, hover runs through | no | tall story cards, grow 1.55 | `"bend"` | yes |
+| `"numbers"` | yes | the frame, "28 [29] 30" | narrow tall bars, grow 1.3 | `"chain"` | no |
+| `"minimal"` | no | "06 / 24" under the strip | story cards, grow 1.18 | `"lerp"` | no |
+
+| Option | Type | Default | |
+| --- | --- | --- | --- |
+| `preset` | `"ruler" \| "numbers" \| "minimal"` | `"ruler"` | Starting point for the look |
+| `ticks` | `boolean` | preset | The ruler of ticks |
+| `rulerHover` | `boolean` | preset | Hovering the ruler with a mouse moves through the pictures (dragging on it always does, touch too) |
+| `numbers` | `"frame" \| "fraction" \| false` | preset | The number readout; `pad` sets the digits (2) |
+| `focusFeedback` | `boolean` | preset | Ticks near the focus lift and brighten; cards away from it dim a little |
+| `colorFocus` | `boolean` | preset | Pictures away from the focus lose a little colour and light (lightly) |
+| `grow` | `number` | preset | How much the picture in focus grows (1 = not at all) |
+| `fluid` | `"off" \| "lerp" \| "chain" \| "bend"` | preset | How it moves (below) |
+| `look` | `"stories" \| "bars"` | preset | Card shape; size with `--fk-dl-w`, `--fk-dl-h`, `--fk-dl-gap`, `--fk-dl-card-radius` |
+| `renderer` | `"auto" \| "dom"` | `"auto"` | For `"bend"`: WebGL where it can, or always the DOM |
+| `wheel` | `"both" \| "x" \| "y" \| false` | `"both"` | Which wheel axis moves it; at either end the page scrolls on |
+| `drag`, `inertia`, `snap` | `boolean` | `true` | Drag it; a flick carries on; it rests on a picture |
+| `expand` | `boolean` | `true` | A tap or Enter opens the picture in the lightbox (loaded on first use) |
+| `lightbox` | unfurl options | | For that lightbox, for example `{ effect: "ripple", strip: "minimal" }` |
+| `start`, `label`, `labels`, `reducedMotion`, `announce` | | | As in the other parts |
+
+Fluid modes:
+
+- `"off"`: a critically damped spring, 1:1 under the finger.
+- `"lerp"`: the position eases toward its target every frame, trailing the finger a touch; a flick decays smoothly (about 7% less speed a frame) with no overshoot.
+- `"chain"`: lerp, and each card eases toward the strip at its own rate, nearer the middle first.
+- `"bend"`: lerp, and speed bulges the strip around its middle so the cards' tops and bottoms trace a curve, flattening as it slows. Drawn in WebGL; it uses the DOM instead when WebGL is missing, when pictures are cross-origin without CORS headers, or when frames run under about 50 fps, and fires `onError` (`reason: "webgl" | "cors" | "slow"`, `fallback: "dom"`).
+
+Returns `{ index, renderer, el, go(i, smooth?), next(), prev(), expand(i?), image(i), destroy() }`. Hooks: `onChange(index, { from, how })` (`how` is `"drag"`, `"wheel"`, `"ruler"`, `"key"`, `"tap"` or `"api"`), `onAnimationStart` and `onAnimationEnd` (`type: "scroll"`), `onSelect(index, img, event)`, `onExpand({ index })`, `onError`. Keys: Left, Right, Home, End and Enter; one card is in the tab order and focus moves with it.
+
 ## unfurl (the lightbox)
 
-`unfurl(options)` opens the lightbox and returns its controls. It closes itself (Escape, the close button, a tap, or a pull down).
+`unfurl(items, options)` (or `unfurl({ items, ...options })`) opens the lightbox and returns its controls. It closes itself (Escape, the close button, a tap, or a pull down).
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
@@ -136,6 +204,7 @@ Returns `{ index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i),
 | `zoom` | `boolean \| { max }` | `true` | Pinch, double tap or double click, Ctrl or trackpad pinch, and the + and - keys zoom; one finger or the mouse pans while zoomed. `max` defaults to 4 |
 | `icons` | `{ prev?, next?, close?, play? }` | | Your icons, as the `d` of a 24px stroked path |
 | `container` | `HTMLElement` | `document.body` | Where the dialog mounts and its events are dispatched |
+| `strip` | `true \| "ruler" \| "numbers" \| "minimal" \| drumline options` | | A drumline filmstrip along the bottom. A tap or a key moves the photo at once; while it is scrubbed, the photo follows when it pauses |
 
 Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`. `destroy()` removes it at once; if it was still open it fires `onCloseStart` and `onCloseEnd` with `reason: "destroy"`, and ends any running animation with `cancelled: true`.
 
@@ -166,7 +235,7 @@ unfurl({
 | `instagram` | the official embed | a post or reel link, or the code |
 | `mp4` | `<video controls playsinline>` | an http(s) or relative file address |
 
-- Give the poster the video's shape: the player takes the poster's box.
+- Give the poster the video's shape: the player takes the poster's box. The poster is optional: an mp4 without one shows its first frame behind the play button, and a neutral 16:9 still stands in elsewhere.
 - Moving to or from a video uses a short crossfade; the effect runs between image slides.
 - Players are sandboxed iframes, and only ids that match each provider's shape are used. A source that does not fit fires `onError` with `reason: "media"`.
 - CSP: add the providers you use to `frame-src` (for example `https://www.youtube-nocookie.com https://player.vimeo.com`), and your mp4 host to `media-src`.
@@ -314,6 +383,8 @@ Each base rule in `frankaa/style.css` carries one class (`.fk-...`), so a site's
 - The overlay is `100dvh` and re-fits, with a spring, when the visual viewport changes as Safari's toolbars show or hide.
 - The counter, close button, arrows and caption sit inside the safe areas. Use `viewport-fit=cover` in your viewport meta to let it use the full screen.
 - On phones the previous and next buttons sit in the bottom corners, beside the caption, within thumb reach.
+- A vertical swipe over a slider or a drumline scrolls the page; they only take sideways drags.
+- `npm run check:touch` runs every part and combination with real touches on iPhone and Android profiles (Chromium) and on iPhone in WebKit, in portrait and landscape.
 
 ## Security, CSP and CORS
 
@@ -334,11 +405,12 @@ Minified and gzipped, each with the code it pulls in:
 
 | Import | Size |
 | --- | --- |
-| `frankaa/slider` | 4.4 kB |
-| `frankaa/lightbox` | 14.9 kB |
-| `frankaa` (both) | 17.7 kB |
-| `frankaa/react` (both, with bindings) | 18.5 kB |
-| `frankaa/style.css` | 2.5 kB |
+| `frankaa/slider` | 4.9 kB |
+| `frankaa/lightbox` | 16.2 kB (the filmstrip loads only when used) |
+| `frankaa/drumline` | 9.4 kB (the lightbox loads on the first tap) |
+| `frankaa` (all three) | 24.9 kB |
+| `frankaa/react` (all three, with bindings) | 25.8 kB |
+| `frankaa/style.css` | 3.2 kB |
 
 ## Performance
 
@@ -368,6 +440,7 @@ npm run check:keys # browser keyboard check; needs Playwright (see the script's 
 npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis lock, taps, scroll lock
 npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks
 npm run check:features # actions and controls, videos, destroy() hooks, zoom, resets, slider options
+npm run check:drumline # every preset and fluid mode, WebGL bend and its fallback, the filmstrip, React StrictMode
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.

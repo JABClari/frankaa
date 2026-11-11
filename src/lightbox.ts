@@ -10,29 +10,18 @@ import { getEffect, registerEffect, effectNames, type Effect, type EffectName, t
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
 import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
 import { embedUrl, type MediaProvider } from "./media";
+import type { Drumline, DrumlineOptions } from "./drumline";
+import { stripOptions, type DrumlinePreset } from "./drumline-math";
+import { readArgs, fullSrc, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
 
 export { supported, checkEffect, registerEffect, effectNames };
 export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider };
 export { embedUrl };
 
-export type UnfurlPhoto = {
-  type?: "image";
-  src: string;
-  /** Let the browser pick the file: a srcset and sizes (default sizes "100vw"). */
-  srcset?: string;
-  sizes?: string;
-  alt?: string;
-  caption?: string;
-  /** Shown while the photo loads (CSS renderer): a colour, or an image address (thumbnail or decoded blurhash). */
-  placeholder?: string;
-};
-/**
- * A video slide. The poster is what springs from the grid and shows until the person taps play; only then is the
- * player loaded (privacy embeds for YouTube and Vimeo, the official embeds for TikTok and Instagram, a <video> for
- * mp4). Give the poster the video's shape.
- */
-export type UnfurlVideo = { type: "video"; provider: MediaProvider; src: string; poster: string; alt?: string; caption?: string; title?: string };
-export type UnfurlItem = UnfurlPhoto | UnfurlVideo;
+/** The shared item format (see items.ts): images and videos, the same list for every part. */
+export type UnfurlPhoto = ImageItem;
+export type UnfurlVideo = VideoItem;
+export type UnfurlItem = Item;
 /** What actions and controls get: the lightbox's state and a few of its controls. */
 export type UnfurlApi = { readonly index: number; readonly item: UnfurlItem; close(): void; next(): void; prev(): void; show(i: number): void };
 export type UnfurlAction = {
@@ -42,7 +31,7 @@ export type UnfurlAction = {
   /** An icon: the d of a 24px stroked path. With an icon the button is round and shows only the icon. */
   icon?: string;
 };
-export type MoveHow = "key" | "button" | "swipe" | "api";
+export type MoveHow = "key" | "button" | "swipe" | "strip" | "api";
 export type AnimationType = "open" | "close" | "change";
 
 export type UnfurlLabels = {
@@ -82,9 +71,11 @@ export type UnfurlHooks = {
 };
 
 export type UnfurlOptions = UnfurlHooks & {
-  /** The photos (and videos), in order. Strings are taken as image `src`. Full-size sources; same-origin or
-   *  CORS-enabled for WebGL. */
-  photos: (UnfurlItem | string)[];
+  /** The items, in order (the shared format: images and videos; strings are taken as src). The lightbox shows
+   *  full (or src); same-origin or CORS-enabled for WebGL. Or pass them as the first argument. */
+  items?: Items;
+  /** The older name for items. */
+  photos?: Items;
   /** Extra buttons in the top bar, before Close, inside the focus trap. */
   topActions?: UnfurlAction[];
   /** Your own controls: called once with a host element in the top bar (before Close, inside the focus trap).
@@ -127,6 +118,10 @@ export type UnfurlOptions = UnfurlHooks & {
   icons?: Icons;
   /** Where the dialog mounts, and where its events are dispatched. Default document.body. */
   container?: HTMLElement;
+  /** A filmstrip under the photo for moving between them: true or "drumline" (the ruler preset), a preset name
+   *  ("ruler", "numbers", "minimal"), or drumline options ({ preset, fluid, numbers, ... }). It shows each item's
+   *  thumb (or src). Default none. */
+  strip?: boolean | "drumline" | DrumlinePreset | Omit<DrumlineOptions, "items" | "photos" | "start" | "expand">;
 };
 
 export type Unfurl = {
@@ -140,18 +135,25 @@ export type Unfurl = {
   show(i: number): void;
   /** Close, springing back to the spot. */
   close(): void;
-  /** Remove at once, without animating. Fires onCloseStart and onCloseEnd with reason "destroy" if still open. */
-  destroy(): void;
+  /** Remove at once, without animating. Fires onCloseStart and onCloseEnd with reason "destroy" if still open,
+   *  unless hooks is false (the React hook passes false on unmount). */
+  destroy(o?: { hooks?: boolean }): void;
 };
 
 type Phase = "opening" | "open" | "closing" | "closed";
 
-/** Open the lightbox. It closes itself (Escape, the close button, a tap, or a pull down). */
-export function unfurl(options: UnfurlOptions): Unfurl {
-  const photos: UnfurlItem[] = options.photos.map((p) => (typeof p === "string" ? { src: p } : p));
-  const isVideo = (p: UnfurlItem): p is UnfurlVideo => p.type === "video";
-  const imageOf = (p: UnfurlItem) => (isVideo(p) ? p.poster : p.src);
-  const sourceOf = (p: UnfurlItem) => (isVideo(p) ? { src: p.poster } : { src: p.src, srcset: p.srcset, sizes: p.sizes, placeholder: p.placeholder });
+/**
+ * Open the lightbox: unfurl(items, options) or unfurl({ items, ...options }). It closes itself (Escape, the close
+ * button, a tap, or a pull down).
+ */
+export function unfurl(items: Items, options?: Omit<UnfurlOptions, "items" | "photos">): Unfurl;
+export function unfurl(options: UnfurlOptions): Unfurl;
+export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items" | "photos">): Unfurl {
+  const { items: photos, options } = readArgs<UnfurlOptions>(a, b);
+  const isVideo = isVideoItem;
+  const imageOf = fullSrc;
+  // srcset describes src; with a separate full file the lightbox uses that alone.
+  const sourceOf = (p: Item) => (isVideo(p) ? { src: fullSrc(p) } : p.full ? { src: p.full, placeholder: p.placeholder } : { src: p.src, srcset: p.srcset, sizes: p.sizes, placeholder: p.placeholder });
   const ic = options.icons ?? {};
   const n = photos.length;
   const L: UnfurlLabels = { ...UNFURL_LABELS, ...(options.label ? { dialog: options.label } : {}), ...options.labels };
@@ -199,6 +201,12 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   root.append(bg, canvas, cssHost, media, top);
   if (n > 1) root.append(prevBtn, nextBtn);
   root.append(cap);
+  // The filmstrip (drumline), when asked for: it sits along the bottom; the photo makes room for it.
+  const stripOpts = stripOptions(options.strip) as Omit<DrumlineOptions, "items" | "photos"> | null;
+  const stripHost = stripOpts ? el("div", "fk-unfurl-strip") : null;
+  if (stripHost) { root.append(stripHost); root.dataset.strip = "true"; }
+  let filmstrip: Drumline | null = null;
+  let stripTimer = 0;
 
   const loop = !!options.loop;
   const label = () => {
@@ -263,7 +271,9 @@ export function unfurl(options: UnfurlOptions): Unfurl {
       const px = (v: string) => parseFloat(v) || 0;
       const pt = px(cs.paddingTop), pr = px(cs.paddingRight), pb = px(cs.paddingBottom), pl = px(cs.paddingLeft);
       const w = r.width || window.innerWidth, h = r.height || window.visualViewport?.height || window.innerHeight;
-      const b = stageBox(w - pl - pr, h - pt - pb);
+      const sh = stripHost ? stripHost.offsetHeight : 0;
+      if (stripHost) root.style.setProperty("--fk-strip-h", `${sh}px`);
+      const b = stageBox(w - pl - pr, h - pt - pb - sh);
       return { x: b.x + pl, y: b.y + pt, w: b.w, h: b.h };
     },
   };
@@ -319,6 +329,9 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     const play = el("button", "fk-unfurl-play", { type: "button", "aria-label": p.title ? `${L.play}: ${p.title}` : L.play });
     play.append(icon(ic.play ?? PLAY, 26));
     play.addEventListener("click", () => playMedia(p));
+    // An mp4 without a poster shows its own first frame behind the play button (the neutral still is under it).
+    const firstFrame = !p.poster && p.provider === "mp4" ? embedUrl("mp4", p.src) : null;
+    if (firstFrame) media.append(el("video", "fk-unfurl-still", { src: `${firstFrame}#t=0.1`, muted: "", playsinline: "", preload: "metadata", "aria-hidden": "true" }));
     media.append(play);
   };
   const playMedia = (p: UnfurlVideo) => {
@@ -329,7 +342,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     }
     let player: HTMLElement;
     if (p.provider === "mp4") {
-      const v = el("video", "fk-unfurl-player", { controls: "", playsinline: "", preload: "auto", poster: p.poster });
+      const v = el("video", "fk-unfurl-player", { controls: "", playsinline: "", preload: "auto", ...(p.poster ? { poster: p.poster } : {}) });
       v.src = url;
       v.autoplay = true;
       v.addEventListener("error", () => emit("onError", { index, src: p.src, reason: "media", fallback: "none", message: "the video did not load" } satisfies UnfurlError), { once: true });
@@ -373,6 +386,24 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   // ---------- Open ----------
   container.append(root);
+  // The filmstrip loads only when asked for; its box is sized by CSS, so the photo makes room from the start.
+  if (stripHost && stripOpts) {
+    void import("./drumline").then(({ drumline }) => {
+      if (phase === "closed") return;
+      filmstrip = drumline(stripHost, photos, {
+        label: L.dialog, ...stripOpts, start: index, expand: false,
+        onChange: (i, d) => {
+          stripOpts.onChange?.(i, d);
+          if (d.how === "api") return;
+          // While the strip is being scrubbed, the photo follows once it pauses (decoding a large photo for every
+          // picture passed would stall a phone); a tap or a key moves it at once.
+          clearTimeout(stripTimer);
+          if (d.how === "tap" || d.how === "key") show(i, "strip");
+          else stripTimer = window.setTimeout(() => show(i, "strip"), 110);
+        },
+      });
+    });
+  }
   closeBtn.focus({ preventScroll: true });
   emit("onOpenStart", { index });
   animStart("open", index);
@@ -406,6 +437,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     const plain = isVideo(photos[from]) || isVideo(photos[next]);
     hideMedia();
     root.dataset.zoomed = "false";
+    if (how !== "strip") filmstrip?.go(next);
     index = next;
     label();
     hide(next);
@@ -446,6 +478,8 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     cancelAnimationFrame(fitFrame);
     window.removeEventListener("keydown", onKey, true);
     stage?.destroy(); stage = null;
+    filmstrip?.destroy(); filmstrip = null;
+    clearTimeout(stripTimer);
     hide(null);
     root.remove();
     unlock();
@@ -539,6 +573,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     hide(next);
     root.dataset.zoomed = "false";
     emit("onChange", { index: next, from, how: "swipe" }, next, { index: next, from, how: "swipe" });
+    filmstrip?.go(next);
     animStart("change", next);
     void s.settle(dir, vx).then(() => { animEnd("change", next); if (phase === "open" && index === next) showMedia(); });
   };
@@ -553,7 +588,7 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     else if (d.axis === "y") stage?.release({ vx: 0, vy: 0 });
   };
   root.addEventListener("pointerdown", (e) => {
-    if ((e.target as Element).closest("button, a") || phase === "closing" || phase === "closed") return;
+    if ((e.target as Element).closest("button, a, .fk-drumline") || phase === "closing" || phase === "closed") return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     if (pointers.size === 2 && canZoom()) {
@@ -695,13 +730,14 @@ export function unfurl(options: UnfurlOptions): Unfurl {
     prev: () => move(-1, "api"),
     show: (i: number) => show(i, "api"),
     close,
-    destroy: () => {
+    destroy: (o?: { hooks?: boolean }) => {
       if (phase === "closed") return;
-      // Tidy-up hooks still fire, so apps can reset their state.
-      if (phase !== "closing") emit("onCloseStart", { index, reason: "destroy" });
-      for (const t of [...pending].reverse()) animEnd(t, index, true);
+      const hooks = o?.hooks !== false;
+      // Tidy-up hooks still fire, so apps can reset their state (unless asked not to).
+      if (hooks && phase !== "closing") emit("onCloseStart", { index, reason: "destroy" });
+      if (hooks) for (const t of [...pending].reverse()) animEnd(t, index, true);
       teardown();
-      emit("onCloseEnd", { index, reason: "destroy" });
+      if (hooks) emit("onCloseEnd", { index, reason: "destroy" });
     },
   };
 }

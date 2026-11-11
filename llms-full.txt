@@ -9,6 +9,31 @@ Docs and playground: https://jabclari.github.io/frankaa/
 Repository: https://github.com/JABClari/frankaa
 
 ====================================================================
+0. ONE ITEM FORMAT, TWO CALL SHAPES (0.2.0)
+====================================================================
+
+Every part takes the same list:
+  type Item = string | ImageItem | VideoItem
+  ImageItem = { src, thumb?, full?, srcset?, sizes?, sources?: [{ media, srcset, sizes?, type? }], alt?, caption?, title?, width?, height?, placeholder? }
+  VideoItem = { type: "video", provider: "youtube" | "vimeo" | "tiktok" | "instagram" | "mp4", src, poster?, thumb?, alt?, caption?, title? }
+The slider shows src (sources make a <picture>), the lightbox full ?? src, strips (drumline, the filmstrip) thumb ?? src.
+A video without a poster: an mp4 shows its first frame in the lightbox; elsewhere a neutral 16:9 still.
+
+Every part takes (items, options) or ({ items, ...options }); `photos` is the older name for items.
+  procession(el, items, options)
+  unfurl(items, options)
+  drumline(el, items, options)
+
+Combining is one option:
+  unfurl(items, { strip: "ruler" })                         // lightbox with a drumline filmstrip
+  unfurl(items, { strip: { preset: "numbers", fluid: "off" } })
+  drumline(el, items, { lightbox: { effect: "ripple", strip: "minimal" } })   // a tap opens the lightbox
+  procession(el, items, { onSelect: (i) => unfurl(items, { start: i, origin: (n) => slider.image(n) }) })
+React:
+  <Drumline items={items} preset="ruler" />
+  const lb = useUnfurl(items, { strip: "ruler" }); lb.open(i)
+
+====================================================================
 1. INSTALL AND IMPORTS
 ====================================================================
 
@@ -16,7 +41,8 @@ npm install frankaa
 
 import { procession, unfurl } from "frankaa";          // both parts
 import { procession } from "frankaa/slider";            // slider only (about 3.3 kB gzipped)
-import { unfurl } from "frankaa/lightbox";              // lightbox only (about 9.7 kB gzipped)
+import { unfurl } from "frankaa/lightbox";              // lightbox only (about 16 kB gzipped)
+import { drumline } from "frankaa/drumline";            // the strip (about 9.4 kB gzipped)
 import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
 import "frankaa/style.css";                              // required once, anywhere in the app
 
@@ -45,6 +71,7 @@ loop          boolean              default false; arrows, keys and autoplay wrap
 autoplay      number | false       ms between moves (min 1500). Default false. Pauses on hover, focus, hidden tab, off screen, reduced motion; adds a pause button
 priority      boolean              first photo loads eagerly with high fetch priority. Default false
 lazyMargin    string               IntersectionObserver rootMargin for loading the other photos. Default "100px"
+preload       "near" | "idle" | false   near the screen (default); also the next photo when idle; or only on touch
 reducedMotion "system" | "always" | "never"   default "system"
 announce      boolean              polite live region on change. Default true
 href          string               the track becomes an <a href>: Cmd, Ctrl and middle click work natively
@@ -89,6 +116,7 @@ zoom          boolean | { max }    pinch, double tap/click, Ctrl+wheel, + and - 
 icons         { prev?, next?, close?, play? }   24px stroked path d strings
 image srcset, sizes (default "100vw") and placeholder are used by both renderers (placeholder: CSS renderer).
 container     HTMLElement          mount point and event target. Default document.body
+strip         true | "ruler" | "numbers" | "minimal" | drumline options   a filmstrip along the bottom
 loop          boolean              wrap from the last photo to the first. Default false (the ends rubber-band)
 Keyboard: Left and Right move, Home and End jump to the first and last, Escape closes, Tab stays inside. A key move puts the focus ring on the matching arrow button.
 Gestures: sideways swipes slide a strip of photos 1:1 with the neighbours peeking in; on release the fling's end is projected from its velocity, the nearest photo is chosen, and the strip springs there with that velocity. Ends rubber-band unless loop. The axis locks after 10 px; only a clearly vertical drag pulls down to close. Keys and buttons use the effect.
@@ -100,6 +128,29 @@ Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ in
 Returns: { index, renderer: "webgl" | "css", next(), prev(), show(i), close(), destroy() }
 api (for actions and controls): { index, item, close(), next(), prev(), show(i) }
 destroy() while open fires onCloseStart and onCloseEnd with reason "destroy", and ends running animations with cancelled: true.
+
+====================================================================
+3b. drumline(el, items, options): the strip (dondo, the talking drum)
+====================================================================
+
+A strip of pictures under a ruler of ticks. Drag or flick it, wheel either way (at the ends the page scrolls on),
+hover or drag along the ruler, Left/Right/Home/End/Enter. The picture in focus grows; a tap opens it in the lightbox
+(loaded on first use) and the strip follows the lightbox.
+
+Presets (every setting can also be given and wins):
+  "ruler"   ticks (hover runs through), story cards, grow 1.55, fluid "bend", colorFocus  (default)
+  "numbers" ticks and the number frame "28 [29] 30", narrow bars, grow 1.3, fluid "chain"
+  "minimal" no ticks, "06 / 24" under the strip, story cards, grow 1.18, fluid "lerp"
+Options: preset, ticks, rulerHover, numbers ("frame" | "fraction" | false), pad (2), focusFeedback, colorFocus, grow,
+  fluid ("off" spring | "lerp" damped follow | "chain" cards trail | "bend" speed bulges the strip, WebGL),
+  look ("stories" | "bars"; size with --fk-dl-w, --fk-dl-h, --fk-dl-gap, --fk-dl-card-radius), renderer ("auto" | "dom"),
+  wheel ("both" | "x" | "y" | false), drag, inertia, snap, expand (true), lightbox (unfurl options), start, label,
+  labels { region, position }, reducedMotion, announce.
+Bend uses WebGL; it falls back to the DOM when WebGL is missing, the thumbs are cross-origin without CORS headers, or
+frames average under about 50 fps, firing onError({ reason: "webgl" | "cors" | "slow", fallback: "dom" }).
+Hooks: onChange(index, { from, how }), onAnimationStart/End({ type: "scroll" }), onSelect(index, img, event),
+  onExpand({ index }), onError. Events: frankaa:change, frankaa:expand, frankaa:error, frankaa:animation-*.
+Returns { index, renderer, el, go(i, smooth?), next(), prev(), expand(i?), image(i), destroy() }.
 
 ====================================================================
 4. EVENTS

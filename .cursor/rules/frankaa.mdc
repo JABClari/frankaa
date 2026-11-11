@@ -15,6 +15,7 @@ alwaysApply: false
 - Extra buttons: `topActions` / `controls` / React `renderControls` + `{lightbox.portal}`; never DOM-inject.
 - `destroy()` fires close hooks with `reason: "destroy"`.
 - Lightbox zoom on by default; slider: `zoom`, `counter`, `href`, `tabbable`, `focusRing: "inset"`, `placeholder`. Theme via `--fk-*`.
+- One items list for every part; combine with `unfurl(items, { strip: "ruler" })` and `drumline(el, items, { preset })`; React `<Drumline items preset />`, `useUnfurl(items, { strip })`.
 - Autoplay off and `reducedMotion: "system"` unless asked. Translate with `labels`.
 - Custom shaders: GLSL ES 1.0 with `precision mediump float;`, `vUv`, `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`; write `gl_FragColor`; use `coverUv()`/`mirrorUv()`. `registerEffect` + `checkEffect`. Errors fall back to CSS via `onError`. Never compile user-supplied shaders.
 - Verify: keyboard, focus trap and return, reduced motion fade, no layout shift, no `frankaa:error`.
