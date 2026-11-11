@@ -119,7 +119,7 @@ container     HTMLElement          mount point and event target. Default documen
 strip         true | "ruler" | "numbers" | "minimal" | drumline options   a filmstrip along the bottom
 loop          boolean              wrap from the last photo to the first. Default false (the ends rubber-band)
 Keyboard: Left and Right move, Home and End jump to the first and last, Escape closes, Tab stays inside. A key move puts the focus ring on the matching arrow button.
-Gestures: sideways swipes slide a strip of photos 1:1 with the neighbours peeking in; on release the fling's end is projected from its velocity, the nearest photo is chosen, and the strip springs there with that velocity. Ends rubber-band unless loop. The axis locks after 10 px; only a clearly vertical drag pulls down to close. Keys and buttons use the effect.
+Gestures: with WebGL a sideways swipe runs the effect under the finger, its progress following the drag; on release the fling's end is projected from its velocity and the effect finishes toward the nearest photo or rewinds, with that velocity. swipe: "strip" (and the CSS renderer, videos and the ends) slides a strip of photos 1:1 with the neighbours peeking in instead. Ends rubber-band unless loop. The axis locks after 10 px; only a clearly vertical drag pulls down to close. Keys and buttons use the effect.
 Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ index }), onCloseEnd({ index }),
        onChange(index, { index, from, how: "key" | "button" | "swipe" | "api" }),
        onAnimationStart({ type: "open" | "close" | "change", index }), onAnimationEnd(same),
