@@ -75,8 +75,9 @@ hideOrigin    boolean              hide the origin element while its photo is ou
 radius        number               corner radius at the spot. Default 16 (match your thumbnails)
 openRadius    number               corner radius when open. Default 12
 container     HTMLElement          mount point and event target. Default document.body
+loop          boolean              wrap from the last photo to the first. Default false (the ends rubber-band)
 Keyboard: Left and Right move, Home and End jump to the first and last, Escape closes, Tab stays inside. A key move puts the focus ring on the matching arrow button.
-Gestures: the photo follows the finger 1:1 (sideways to move, down to close); release hands it to a spring seeded with the finger's velocity.
+Gestures: sideways swipes slide a strip of photos 1:1 with the neighbours peeking in; on release the fling's end is projected from its velocity, the nearest photo is chosen, and the strip springs there with that velocity. Ends rubber-band unless loop. The axis locks after 10 px; only a clearly vertical drag pulls down to close. Keys and buttons use the effect.
 Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ index }), onCloseEnd({ index }),
        onChange(index, { index, from, how: "key" | "button" | "swipe" | "api" }),
        onAnimationStart({ type: "open" | "close" | "change", index }), onAnimationEnd(same),

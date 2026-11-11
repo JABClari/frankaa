@@ -25,7 +25,7 @@ photos (required), label, labels, start, dots, arrows, snap ("mandatory" | "prox
 
 ## Lightbox options
 
-photos (required, { src, alt?, caption? } or string), start, origin ((i) => Element | DOMRect | null), effect ("displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | { fragment, uniforms?, duration?, easing?, css? }), renderer ("auto" | "webgl" | "css"), reducedMotion, label, labels, focusTrap (true), returnFocus (true | HTMLElement | false), announce (true), hideOrigin (true), radius (16), openRadius (12), container. Returns { index, renderer, next(), prev(), show(i), close(), destroy() }.
+photos (required, { src, alt?, caption? } or string), start, origin ((i) => Element | DOMRect | null), effect ("displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | { fragment, uniforms?, duration?, easing?, css? }), renderer ("auto" | "webgl" | "css"), reducedMotion, label, labels, focusTrap (true), returnFocus (true | HTMLElement | false), announce (true), hideOrigin (true), radius (16), openRadius (12), container, loop (false). Returns { index, renderer, next(), prev(), show(i), close(), destroy() }. Swipes slide a photo strip with the neighbours peeking in; keys and buttons use the effect.
 
 ## Hooks (also DOM CustomEvents "frankaa:<kebab-name>", bubbling)
 

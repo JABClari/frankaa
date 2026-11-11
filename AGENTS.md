@@ -39,6 +39,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 - Opening a lightbox from a slider without keeping the slider in step: it then closes to the wrong spot.
 - Wrapping `Procession` photos in a new array on every render is fine (it rebuilds only when sources change), but do not change `labels` objects on every render without need.
 - Expecting the slider to loop infinitely: `loop` rewinds from the last photo to the first.
+- The lightbox does not wrap by default (the ends rubber-band); pass `loop: true` to wrap.
 - Using `innerHTML` to build captions: pass plain text; frankaa sets it with `textContent`.
 
 ## Custom shaders

@@ -60,7 +60,7 @@ test("onScreen rejects tiny and off-screen spots", () => {
   assert.ok(!onScreen({ left: 10, top: 900, width: 200, height: 150 }, 1000, 800));
 });
 
-import { draggedBox, flipFrame, pickRenderer, radiusAt, stepBox } from "../src/lightbox-math.ts";
+import { draggedBox, flipFrame, lockAxis, neighbours, pickRenderer, pickSlide, project, radiusAt, stepBox, stripStep } from "../src/lightbox-math.ts";
 
 test("flipFrame moves and scales the layer and keeps the photo undistorted", () => {
   const rest = { x: 100, y: 50, w: 800, h: 600 };
@@ -122,4 +122,42 @@ test("draggedBox moves and scales the open box about its centre", () => {
   const rest = { x: 100, y: 100, w: 400, h: 200 };
   assert.deepEqual(draggedBox(rest, { x: 0, y: 0, s: 1 }), rest);
   assert.deepEqual(draggedBox(rest, { x: 10, y: 50, s: 0.5 }), { x: 210, y: 200, w: 200, h: 100 });
+});
+
+test("neighbours stop at the ends unless loop", () => {
+  assert.deepEqual(neighbours(0, 4, false), { prev: null, next: 1 });
+  assert.deepEqual(neighbours(3, 4, false), { prev: 2, next: null });
+  assert.deepEqual(neighbours(3, 4, true), { prev: 2, next: 0 });
+  assert.deepEqual(neighbours(0, 1, true), { prev: null, next: null });
+});
+
+test("project: a fling's resting distance grows with its velocity and keeps its sign", () => {
+  assert.equal(project(0), 0);
+  assert.ok(Math.abs(project(1000) - 499) < 1);
+  assert.ok(project(-500) < 0);
+});
+
+test("pickSlide takes the photo nearest the projected stop", () => {
+  const pitch = 400;
+  assert.equal(pickSlide(-250, 0, pitch, true, true), 1);    // dragged past half way
+  assert.equal(pickSlide(-100, 0, pitch, true, true), 0);    // not far enough, slow
+  assert.equal(pickSlide(-60, -800, pitch, true, true), 1);  // short, but flung
+  assert.equal(pickSlide(-250, 900, pitch, true, true), 0);  // far, but flung back
+  assert.equal(pickSlide(250, 0, pitch, true, true), -1);
+  assert.equal(pickSlide(-300, -900, pitch, true, false), 0); // nothing after the last photo
+});
+
+test("lockAxis waits for 10 px, then keeps diagonal swipes sideways", () => {
+  assert.equal(lockAxis(5, 5), null);
+  assert.equal(lockAxis(20, 2), "x");
+  assert.equal(lockAxis(14, 14), "x");  // 45 degrees: sideways, never a close
+  assert.equal(lockAxis(10, 14), "x");  // about 54 degrees: still sideways
+  assert.equal(lockAxis(4, 20), "y");
+});
+
+test("stripStep brings the strip home without overshoot", () => {
+  let x = -300, v = -1200, min = x, t = 0;
+  while ((Math.abs(x) > 0.25 || Math.abs(v) > 2) && t < 2) { [x, v] = stripStep(x, v, 1 / 60); min = Math.min(min, x); t += 1 / 60; }
+  assert.ok(t < 1, `took ${t.toFixed(2)} s`);
+  assert.ok(x <= 0.25, "comes back from the left without crossing far to the right");
 });
