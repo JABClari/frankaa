@@ -51,18 +51,18 @@ kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px
 .nav-end { display: flex; gap: 8px; }
 
 /* ---------- Hero ---------- */
-.hero { text-align: center; padding: 84px 0 40px; }
-.hero svg.mark { width: 76px; height: 76px; transition: transform .3s var(--ease); }
+.hero { text-align: center; padding: 64px 0 30px; }
+.hero svg.mark { width: 58px; height: 58px; transition: transform .3s var(--ease); }
 .hero:hover svg.mark { transform: rotate(-4deg) translateY(-2px); }
-.hero h1 { font: 700 64px/1 var(--display); letter-spacing: -.035em; margin: 14px 0 6px; }
+.hero h1 { font: 700 50px/1 var(--display); letter-spacing: -.035em; margin: 10px 0 4px; }
 .say { color: var(--ink-3); font-size: 15px; margin: 0; }
-.lede { text-wrap: balance; font: 500 26px/1.25 var(--sans); letter-spacing: -.02em; max-width: 22ch; margin: 26px auto 0; }
-.points { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; }
-.install { display: inline-flex; align-items: center; gap: 10px; height: 44px; margin-top: 26px; padding: 0 6px 0 16px; border-radius: 999px; background: var(--card); box-shadow: 0 0 0 1px var(--line), var(--shadow); font: 500 14px/1 var(--mono); }
+.lede { text-wrap: balance; font: 500 21px/1.25 var(--sans); letter-spacing: -.02em; max-width: 22ch; margin: 20px auto 0; }
+.points { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 17px 0 0; padding: 0; list-style: none; }
+.install { display: inline-flex; align-items: center; gap: 10px; height: 40px; margin-top: 20px; padding: 0 6px 0 16px; border-radius: 999px; background: var(--card); box-shadow: 0 0 0 1px var(--line), var(--shadow); font: 500 14px/1 var(--mono); }
 .install span { color: var(--ink-3); }
 
 /* ---------- The name, and its story ---------- */
-.word { position: relative; padding: 0 0 14px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease); }
+.word { position: relative; padding: 0 0 11px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: transform .16s var(--ease); }
 .word:active { transform: scale(.98); }
 .wave { position: absolute; left: 4%; right: 4%; bottom: 0; width: 92%; height: 10px; overflow: visible; }
 .wave path { fill: none; stroke: var(--gold); stroke-width: 2.4; stroke-linecap: round; vector-effect: non-scaling-stroke; animation: wave 2.4s linear infinite; }
@@ -220,7 +220,7 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
 
 @media (max-width: 1000px) { .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid3, .cards3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) {
-  .hero { padding: 48px 0 24px; } .hero h1 { font-size: 48px; } .lede { font-size: 21px; }
+  .hero { padding: 36px 0 18px; } .hero h1 { font-size: 38px; } .hero svg.mark { width: 46px; height: 46px; } .lede { font-size: 17px; margin-top: 16px; } .points { margin-top: 13px; } .install { margin-top: 16px; }
   .grid2, .grid3, .cards3 { grid-template-columns: minmax(0, 1fr); }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
   .cards3 { padding: 12px; }
