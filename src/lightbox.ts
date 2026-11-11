@@ -1,114 +1,151 @@
-// unfurl: a photo lightbox. The tapped photo lifts out of its spot and springs to full view on a WebGL canvas;
-// arrows, keys or a swipe move between photos with a displacement crossfade; closing springs it back into its
-// spot. With reduced motion it is a plain fade. Without WebGL (or when a photo cannot be drawn) the same dialog
-// shows the photo as a plain image instead.
-import { containBox, easeInOut, onScreen, settled, springStep, stageBox, swipeIntent, SPRING_CLOSE, SPRING_OPEN, type Box } from "./lightbox-math";
-import { createRenderer, supported, type Renderer } from "./lightbox-gl";
+// unfurl: a photo lightbox. The photo lifts out of its spot and springs to full view, moves between photos with
+// an effect, and springs back to its spot when closed. Two renderers: WebGL (a canvas, with shader effects) and
+// CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
+// If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
+// says so through onError, so nothing fails silently.
+import { onScreen, pickRenderer, stageBox, swipeIntent, type Box, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { checkEffect, createGlStage, supported } from "./lightbox-gl";
+import { createCssStage } from "./lightbox-css";
+import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
+import { fill, resolveReduced, type ReducedMotion } from "./shared";
+import { CHEVRON, CROSS, el, emitter, icon, systemReduces } from "./dom";
 
-export { supported };
+export { supported, checkEffect, registerEffect, effectNames };
+export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion };
 
 export type UnfurlPhoto = { src: string; alt?: string; caption?: string };
-export type MoveHow = "key" | "button" | "swipe";
+export type MoveHow = "key" | "button" | "swipe" | "api";
+export type AnimationType = "open" | "close" | "change";
 
-export type UnfurlOptions = {
-  /** The photos, in order. Strings are taken as `src`. Use full-size sources; same-origin or CORS-enabled for WebGL. */
+export type UnfurlLabels = {
+  /** The dialog's name. Default "Photos". */
+  dialog: string;
+  close: string;
+  next: string;
+  previous: string;
+  /** Read out on each photo. {n}, {total}. Default "Photo {n} of {total}". The photo's alt follows it. */
+  position: string;
+  /** The visible counter. {n}, {total}. Default "{n} / {total}". */
+  counter: string;
+};
+export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", counter: "{n} / {total}" };
+
+/** cors: a cross-origin photo without CORS headers; load: the photo did not load; webgl: no WebGL (only when
+ *  renderer is "webgl"); shader: the effect did not compile (message has the log). */
+export type UnfurlError = { index: number; src: string; reason: "cors" | "load" | "webgl" | "shader"; fallback: "css" | "none"; message?: string };
+
+export type UnfurlHooks = {
+  onOpenStart?: (d: { index: number }) => void;
+  onOpenEnd?: (d: { index: number; renderer: "webgl" | "css" }) => void;
+  onCloseStart?: (d: { index: number }) => void;
+  onCloseEnd?: (d: { index: number }) => void;
+  onChange?: (index: number, d: { index: number; from: number; how: MoveHow }) => void;
+  onAnimationStart?: (d: { type: AnimationType; index: number }) => void;
+  onAnimationEnd?: (d: { type: AnimationType; index: number }) => void;
+  onError?: (d: UnfurlError) => void;
+};
+
+export type UnfurlOptions = UnfurlHooks & {
+  /** The photos, in order. Strings are taken as `src`. Full-size sources; same-origin or CORS-enabled for WebGL. */
   photos: (UnfurlPhoto | string)[];
   /** The photo to open on. Default 0. */
   start?: number;
-  /** Where photo i sits on the page now: an element or a rect. Return null when it is not on show (it then fades). */
+  /** Where photo i sits on the page now: an element or a rect. Null (or off screen) means it fades instead. */
   origin?: (i: number) => Element | DOMRect | null;
-  /** The dialog's accessible name. Default "Photos". */
+  /** Shorthand for labels.dialog. */
   label?: string;
+  /** Every string the lightbox shows or reads out, for other languages. */
+  labels?: Partial<UnfurlLabels>;
+  /** The effect between photos: a built-in or registered name, or your own { fragment, uniforms, duration, easing }.
+   *  Default "displacement". The CSS renderer shows each as a fade, slide, zoom or cut. */
+  effect?: EffectName | (string & {}) | Effect;
+  /** "auto" (default) uses WebGL where it is there, else CSS. "css" never touches WebGL. */
+  renderer?: RendererPref;
+  /** "system" (default) follows the person's setting; "always" and "never" override it. */
+  reducedMotion?: ReducedMotion;
+  /** Keep Tab inside the dialog. Default true. */
+  focusTrap?: boolean;
+  /** Where focus goes on close: true (default) back to where it was, an element, or false to leave it. */
+  returnFocus?: boolean | HTMLElement;
+  /** Read each photo out through a polite live region. Default true. */
+  announce?: boolean;
   /** Hide the origin element while its photo is out, so it looks lifted. Default true. */
   hideOrigin?: boolean;
-  /** Corner radius of the photo in its spot, and when open, in CSS px. Defaults 16 and 12. */
+  /** Corner radius of the photo in its spot, and open, in CSS px. Defaults 16 and 12. */
   radius?: number;
   openRadius?: number;
-  /** Use WebGL when the browser has it. Set false to always use the plain image. Default true. */
-  webgl?: boolean;
-  /** Where the dialog mounts. Default document.body. */
+  /** Where the dialog mounts, and where its events are dispatched. Default document.body. */
   container?: HTMLElement;
-  /** Called when the photo showing changes. */
-  onChange?: (index: number, how: MoveHow) => void;
-  /** Called once the dialog has closed and left the page. */
-  onClose?: (index: number) => void;
 };
 
 export type Unfurl = {
   /** The photo showing now. */
   readonly index: number;
-  /** "gl" when drawn with WebGL, "dom" when shown as a plain image. */
-  readonly mode: "gl" | "dom";
+  /** The renderer in use: "webgl" or "css". */
+  readonly renderer: "webgl" | "css";
   next(): void;
   prev(): void;
+  /** Go to photo i. */
+  show(i: number): void;
   /** Close, springing back to the spot. */
   close(): void;
   /** Remove at once, without animating. */
   destroy(): void;
 };
 
-type Phase = "opening" | "open" | "closing";
-const SWAP_MS = 520, FADE_MS = 160, DOM_MS = 220;
-const KEYS = ["x", "y", "w", "h"] as const;
+type Phase = "opening" | "open" | "closing" | "closed";
 
-const CHEV = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const X = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-
-function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, attrs: Record<string, string> = {}): HTMLElementTagNameMap[K] {
-  const e = document.createElement(tag);
-  e.className = cls;
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-}
-
-/** Open the lightbox. It closes itself (Escape, the close button, a tap or a pull down) and calls onClose. */
+/** Open the lightbox. It closes itself (Escape, the close button, a tap, or a pull down). */
 export function unfurl(options: UnfurlOptions): Unfurl {
   const photos = options.photos.map((p) => (typeof p === "string" ? { src: p } : p));
   const n = photos.length;
-  const R_GRID = options.radius ?? 16, R_OPEN = options.openRadius ?? 12;
+  const L: UnfurlLabels = { ...UNFURL_LABELS, ...(options.label ? { dialog: options.label } : {}), ...options.labels };
+  const still = resolveReduced(options.reducedMotion, systemReduces());
+  const effect = getEffect(still ? "fade" : options.effect);
+  const trap = options.focusTrap !== false;
+  const announce = options.announce !== false;
   const hideOrigin = options.hideOrigin !== false;
-  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const returnFocus = document.activeElement as HTMLElement | null;
+  const container = options.container ?? document.body;
+  const before = document.activeElement as HTMLElement | null;
+  const emit = emitter(options, () => container);
   let index = Math.min(n - 1, Math.max(0, options.start ?? 0));
-  let phase: Phase = "opening";
-  let mode: "gl" | "dom" = "dom";
-  let gone = false;
+  let phase = "opening" as Phase;
 
-  // The dialog and its controls.
-  const root = node("div", "fk-unfurl", { role: "dialog", "aria-modal": "true", "aria-label": options.label ?? "Photos", "data-phase": "opening" });
-  const bg = node("div", "fk-unfurl-bg", { "aria-hidden": "true" });
-  const canvas = node("canvas", "fk-unfurl-gl", { "aria-hidden": "true" });
-  const img = node("img", "fk-unfurl-img", { alt: "", decoding: "async" });
-  const top = node("div", "fk-unfurl-top");
-  const count = node("span", "fk-unfurl-n", { "aria-hidden": "true" });
-  const status = node("span", "fk-sr", { "aria-live": "polite", "aria-atomic": "true" });
-  const closeBtn = node("button", "fk-unfurl-btn fk-unfurl-close", { type: "button", "aria-label": "Close" });
-  closeBtn.innerHTML = X;
+  // The dialog and its controls. Text goes in with textContent only.
+  const root = el("div", "fk-unfurl", { role: "dialog", "aria-label": L.dialog, "data-phase": "opening" });
+  if (trap) root.setAttribute("aria-modal", "true");
+  const bg = el("div", "fk-unfurl-bg", { "aria-hidden": "true" });
+  const canvas = el("canvas", "fk-unfurl-gl", { "aria-hidden": "true" });
+  const cssHost = el("div", "fk-unfurl-css");
+  const top = el("div", "fk-unfurl-top");
+  const count = el("span", "fk-unfurl-n", { "aria-hidden": "true" });
+  const status = el("span", "fk-sr", announce ? { "aria-live": "polite", "aria-atomic": "true" } : {});
+  const closeBtn = el("button", "fk-unfurl-btn fk-unfurl-close", { type: "button", "aria-label": L.close });
+  closeBtn.append(icon(CROSS, 18));
   top.append(count, status, closeBtn);
-  const prevBtn = node("button", "fk-unfurl-btn fk-unfurl-prev", { type: "button", "aria-label": "Previous photo" });
-  const nextBtn = node("button", "fk-unfurl-btn fk-unfurl-next", { type: "button", "aria-label": "Next photo" });
-  prevBtn.innerHTML = nextBtn.innerHTML = CHEV;
-  const cap = node("p", "fk-unfurl-cap");
-  root.append(bg, canvas, img, top);
+  const prevBtn = el("button", "fk-unfurl-btn fk-unfurl-prev", { type: "button", "aria-label": L.previous });
+  const nextBtn = el("button", "fk-unfurl-btn fk-unfurl-next", { type: "button", "aria-label": L.next });
+  prevBtn.append(icon(CHEVRON, 18));
+  nextBtn.append(icon(CHEVRON, 18));
+  const cap = el("p", "fk-unfurl-cap");
+  root.append(bg, canvas, cssHost, top);
   if (n > 1) root.append(prevBtn, nextBtn);
   root.append(cap);
 
   const label = () => {
-    const p = photos[index];
-    count.textContent = `${index + 1} / ${n}`;
-    status.textContent = `Photo ${index + 1} of ${n}${p.alt ? `: ${p.alt}` : ""}`;
+    const p = photos[index], v = { n: index + 1, total: n };
+    count.textContent = fill(L.counter, v);
+    if (announce) status.textContent = fill(L.position, v) + (p.alt ? `. ${p.alt}` : "");
     cap.textContent = p.caption ?? "";
     cap.hidden = !p.caption;
-    img.alt = p.alt ?? "";
   };
   label();
 
-  // Where photo i sits on the page, and its element (to hide while it is out).
   const spot = (i: number): { box: Box | null; el: HTMLElement | null } => {
     const o = options.origin?.(i) ?? null;
     if (!o) return { box: null, el: null };
-    const isEl = typeof Element !== "undefined" && o instanceof Element;
-    const r = isEl ? (o as Element).getBoundingClientRect() : (o as DOMRect);
+    const isEl = o instanceof Element;
+    const r = isEl ? o.getBoundingClientRect() : o;
     const box = onScreen(r, window.innerWidth, window.innerHeight) ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
     return { box, el: isEl ? (o as HTMLElement) : null };
   };
@@ -116,12 +153,12 @@ export function unfurl(options: UnfurlOptions): Unfurl {
   const hide = (i: number | null) => {
     if (hidden) hidden.style.visibility = "";
     hidden = null;
-    if (i === null || !hideOrigin || mode !== "gl") return;
+    if (i === null || !hideOrigin) return;
     const e = spot(i).el;
     if (e) { e.style.visibility = "hidden"; hidden = e; }
   };
 
-  // Lock the page: no scroll behind, no layout jump where the scrollbar was.
+  // Lock the page without a layout jump where the scrollbar was.
   const html = document.documentElement;
   const prevOverflow = html.style.overflow, prevPad = html.style.paddingRight;
   const gap = window.innerWidth - html.clientWidth;
@@ -130,172 +167,124 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   const setPhase = (p: Phase) => { phase = p; root.dataset.phase = p; };
 
-  // ---------- WebGL: one rAF loop draws the spring and the crossfade ----------
-  let gl: Renderer | null = null;
-  const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, radius: R_GRID, a: index, b: index, mix: 0, dir: 1, swapAt: 0, alpha: 1, fadeAt: 0 };
-  let raf = 0, last = 0;
-  const fitFor = (i: number): Box => containBox(gl?.aspect(i) ?? 1.5, stageBox(window.innerWidth, window.innerHeight));
-
-  const loop = () => {
-    if (!gl) return;
-    const now = performance.now();
-    // Real time, so the spring keeps its speed on a slow device: sub-steps of at most 1/120 s, and the gap since
-    // the last frame clamped to 1/15 s so a stalled tab does not jump.
-    const dt = Math.min(1 / 15, Math.max(0, (now - (last || now - 1000 / 60)) / 1000));
-    last = now;
-    let moving = false;
-    if (still) st.box = { ...st.target };
-    else {
-      const cfg = phase === "closing" ? SPRING_CLOSE : SPRING_OPEN;
-      const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
-      KEYS.forEach((k, j) => {
-        let x = st.box[k], v = st.vel[j];
-        for (let s = 0; s < steps; s++) [x, v] = springStep(x, v, st.target[k], h, cfg);
-        st.box[k] = x; st.vel[j] = v;
-        if (!settled(x, v, st.target[k])) moving = true;
-      });
-    }
-    // The corner radius follows how far the box still has to go.
-    const left = Math.min(1, Math.abs(st.box.w - st.target.w) / Math.max(1, st.target.w));
-    st.radius = phase === "closing" ? R_OPEN + (R_GRID - R_OPEN) * (1 - left) : R_OPEN + (R_GRID - R_OPEN) * left;
-    if (st.swapAt) {
-      const t = (now - st.swapAt) / (still ? FADE_MS : SWAP_MS);
-      st.mix = easeInOut(t);
-      if (t >= 1) { st.a = st.b; st.mix = 0; st.swapAt = 0; } else moving = true;
-    }
-    if (st.fadeAt) {
-      const t = Math.min(1, (now - st.fadeAt) / FADE_MS);
-      st.alpha = phase === "closing" ? 1 - t : t;
-      if (t < 1) moving = true;
-    }
-    gl.draw({ box: st.box, radius: st.radius, a: st.a, b: st.b, mix: st.mix, dir: st.dir, wobble: still ? 0 : 0.06, alpha: st.alpha });
-    if (moving) raf = requestAnimationFrame(loop);
-    else {
-      raf = 0; last = 0;
-      if (phase === "opening") setPhase("open");
-      else if (phase === "closing") finish();
-    }
+  // ---------- Renderers ----------
+  const ctx: StageCtx = {
+    still, rSpot: options.radius ?? 16, rOpen: options.openRadius ?? 12, duration: effect.duration ?? 520,
+    area: () => stageBox(window.innerWidth, window.innerHeight),
   };
-  const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
-  const onResize = () => {
-    if (mode === "gl" && gl) { gl.resize(); st.target = fitFor(st.b); kick(); }
+  const wantGl = pickRenderer(options.renderer, true) === "webgl";
+  let stage: Stage | null = null;
+  if (wantGl) {
+    const built = createGlStage(canvas, photos.map((p) => p.src), effect, ctx);
+    if (built.stage) stage = built.stage;
+    // A shader that does not compile is always reported; missing WebGL only when WebGL was asked for by name.
+    else if (built.error.reason === "shader" || options.renderer === "webgl") {
+      const err = built.error;
+      queueMicrotask(() => emit("onError", { index, src: photos[index].src, reason: err.reason, fallback: "css", message: err.message } satisfies UnfurlError));
+    }
+  }
+  const useCss = () => {
+    stage?.destroy();
+    stage = createCssStage(cssHost, photos, effect.css ?? "fade", ctx);
+    root.dataset.renderer = "css";
+    return stage;
   };
+  if (!stage) useCss(); else root.dataset.renderer = "webgl";
 
-  // ---------- Plain image: the fallback, and the whole show without WebGL ----------
-  const fade = (from: number, to: number, ms: number, scale = 1) =>
-    typeof img.animate === "function"
-      ? img.animate([{ opacity: from, transform: `scale(${still ? 1 : scale})` }, { opacity: to, transform: "none" }], { duration: still ? FADE_MS : ms, easing: "cubic-bezier(.23,1,.32,1)", fill: "forwards" })
-      : null;
-  const startDom = () => {
-    if (gone) return;
-    mode = "dom";
-    root.dataset.mode = "dom";
-    if (gl) { cancelAnimationFrame(raf); raf = 0; gl.destroy(); gl = null; }
-    hide(null);
-    img.src = photos[index].src;
-    const a = fade(0, 1, DOM_MS, 0.96);
-    const done = () => { if (phase === "opening") setPhase("open"); };
-    if (a) a.onfinish = done; else done();
+  // WebGL could not draw photo i: tell the caller, switch to CSS, and show it there without the spring.
+  const fallBack = async (i: number) => {
+    const s = useCss();
+    const ok = await s.open(i, null, () => hide(i));
+    emit("onError", { index: i, src: photos[i].src, reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
+    return ok;
   };
 
   // ---------- Open ----------
-  (options.container ?? document.body).append(root);
+  container.append(root);
   closeBtn.focus({ preventScroll: true });
-  if (options.webgl !== false) gl = createRenderer(canvas, photos.map((p) => p.src));
-  if (gl) {
-    mode = "gl";
-    root.dataset.mode = "gl";
-    const g = gl;
-    g.ready(index).then((ok) => {
-      if (gone || gl !== g) return;
-      if (!ok) { startDom(); return; }
-      const from = spot(index).box, to = fitFor(index);
-      st.target = to;
-      if (still || !from) { st.box = { ...to }; st.alpha = 0; st.fadeAt = performance.now(); }
-      else st.box = from;
-      hide(index);
-      kick();
-      photos.forEach((_, i) => i !== index && void g.ready(i));
-    });
-  } else startDom();
+  emit("onOpenStart", { index });
+  emit("onAnimationStart", { type: "open", index });
+  void (async () => {
+    const from = spot(index).box;
+    const s = stage!;
+    let ok = await s.open(index, from, () => hide(index));
+    if (phase === "closed") return;
+    if (!ok && s.kind === "webgl") ok = await fallBack(index);
+    else if (!ok) emit("onError", { index, src: photos[index].src, reason: "load", fallback: "none" } satisfies UnfurlError);
+    if (phase !== "opening") return;
+    setPhase("open");
+    emit("onAnimationEnd", { type: "open", index });
+    emit("onOpenEnd", { index, renderer: stage!.kind });
+  })();
+
+  const onResize = () => stage?.resize();
   window.addEventListener("resize", onResize);
 
-  // ---------- Moving and closing ----------
-  const move = (d: 1 | -1, how: MoveHow = "button") => {
-    if (phase === "closing" || n < 2) return;
-    const next = (index + d + n) % n;
+  // ---------- Moving ----------
+  const show = (to: number, how: MoveHow, dir?: 1 | -1) => {
+    if (phase === "closing" || phase === "closed" || n < 2) return;
+    const next = ((to % n) + n) % n;
+    if (next === index) return;
+    const from = index, d = dir ?? (next > from ? 1 : -1);
     index = next;
     label();
-    if (mode === "gl" && gl) {
-      st.a = st.swapAt ? st.b : st.a; st.b = next; st.dir = d; st.mix = 0; st.swapAt = performance.now();
-      const g = gl;
-      void g.ready(next).then((ok) => {
-        if (gone || gl !== g) return;
-        if (!ok) { startDom(); return; }
-        st.target = fitFor(next); kick();
-      });
-      kick();
-      hide(next);
-    } else {
-      img.src = photos[next].src;
-      fade(0, 1, DOM_MS);
-    }
-    options.onChange?.(next, how);
+    hide(next);
+    emit("onChange", { index: next, from, how }, next, { index: next, from, how });
+    emit("onAnimationStart", { type: "change", index: next });
+    const s = stage!;
+    void s.show(next, d).then(async (ok) => {
+      if (!ok && phase !== "closed" && s.kind === "webgl" && stage === s) await fallBack(next);
+      else if (!ok && phase !== "closed") emit("onError", { index: next, src: photos[next].src, reason: "load", fallback: "none" } satisfies UnfurlError);
+      emit("onAnimationEnd", { type: "change", index: next });
+    });
   };
+  const move = (d: 1 | -1, how: MoveHow) => show(index + d, how, d);
 
+  // ---------- Closing ----------
   const close = () => {
-    if (phase === "closing" || gone) return;
+    if (phase === "closing" || phase === "closed") return;
     setPhase("closing");
-    if (mode === "gl" && gl) {
-      const home = spot(st.b).box;
-      if (still || !home) {
-        st.fadeAt = performance.now();
-        if (!home) st.target = { x: st.box.x + st.box.w * 0.05, y: st.box.y + st.box.h * 0.05, w: st.box.w * 0.9, h: st.box.h * 0.9 };
-      } else st.target = home;
-      kick();
-    } else {
-      const a = fade(1, 0, FADE_MS);
-      if (a) a.onfinish = finish; else finish();
-    }
+    emit("onCloseStart", { index });
+    emit("onAnimationStart", { type: "close", index });
+    void stage!.close(spot(index).box).then(() => {
+      if (phase === "closed") return;
+      teardown();
+      emit("onAnimationEnd", { type: "close", index });
+      emit("onCloseEnd", { index });
+    });
   };
 
-  const finish = () => {
-    if (gone) return;
-    teardown();
-    options.onClose?.(index);
-  };
   const teardown = () => {
-    gone = true;
-    cancelAnimationFrame(raf); raf = 0;
+    setPhase("closed");
     window.removeEventListener("resize", onResize);
     window.removeEventListener("keydown", onKey, true);
-    gl?.destroy(); gl = null;
+    stage?.destroy(); stage = null;
     hide(null);
     root.remove();
     html.style.overflow = prevOverflow;
     html.style.paddingRight = prevPad;
-    if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+    const back = options.returnFocus === false ? null : options.returnFocus instanceof HTMLElement ? options.returnFocus : before;
+    if (back && document.contains(back)) back.focus({ preventScroll: true });
   };
 
-  // Keys: Escape closes, arrows move, Tab stays inside the dialog.
+  // Keys: Escape closes, arrows move, Tab stays inside (unless focusTrap is false).
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(); }
     else if (e.key === "ArrowRight") { e.preventDefault(); move(1, "key"); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); move(-1, "key"); }
-    else if (e.key === "Tab") {
+    else if (e.key === "Tab" && trap) {
       const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href]")).filter((b) => !b.hidden && b.offsetParent !== null);
-      if (!f.length) { e.preventDefault(); return; }
-      const i = f.indexOf(document.activeElement as HTMLElement);
-      const to = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i === -1 || i === f.length - 1 ? 0 : i + 1);
       e.preventDefault();
-      f[to].focus();
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement as HTMLElement);
+      f[e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i === -1 || i === f.length - 1 ? 0 : i + 1)].focus();
     }
   };
   window.addEventListener("keydown", onKey, true);
 
-  closeBtn.addEventListener("click", () => close());
-  prevBtn.addEventListener("click", () => move(-1));
-  nextBtn.addEventListener("click", () => move(1));
+  closeBtn.addEventListener("click", close);
+  prevBtn.addEventListener("click", () => move(-1, "button"));
+  nextBtn.addEventListener("click", () => move(1, "button"));
 
   // Swipe sideways to move, pull down to close, tap outside the controls to close.
   let drag: { x: number; y: number; t: number } | null = null;
@@ -315,10 +304,11 @@ export function unfurl(options: UnfurlOptions): Unfurl {
 
   return {
     get index() { return index; },
-    get mode() { return mode; },
-    next: () => move(1),
-    prev: () => move(-1),
+    get renderer() { return stage?.kind ?? "css"; },
+    next: () => move(1, "api"),
+    prev: () => move(-1, "api"),
+    show: (i: number) => show(i, "api"),
     close,
-    destroy: () => { if (!gone) teardown(); },
+    destroy: () => { if (phase !== "closed") teardown(); },
   };
 }

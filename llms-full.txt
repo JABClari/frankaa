@@ -1,0 +1,284 @@
+# frankaa: full reference for AI assistants
+
+frankaa (said FRAN-kah) is a photo slider and a photo lightbox for the web.
+- procession: the slider. A native CSS scroll-snap track: swipes follow the finger 1:1 with momentum. Dots, hover arrows, lazy loading, optional loop and autoplay.
+- unfurl: the lightbox. The photo springs from its spot on the page to full view, changes photos with an effect, and springs back on close. Two renderers: WebGL (shader effects, built-in or custom) and CSS (transform and opacity only).
+
+Framework-free TypeScript, zero runtime dependencies, optional React bindings, ESM only, MIT licence.
+Docs and playground: https://jabclari.github.io/frankaa/
+Repository: https://github.com/JABClari/frankaa
+
+====================================================================
+1. INSTALL AND IMPORTS
+====================================================================
+
+npm install frankaa
+
+import { procession, unfurl } from "frankaa";          // both parts
+import { procession } from "frankaa/slider";            // slider only (about 3 kB gzipped)
+import { unfurl } from "frankaa/lightbox";              // lightbox only (about 8.4 kB gzipped)
+import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
+import "frankaa/style.css";                              // required once, anywhere in the app
+
+Also exported from "frankaa" and "frankaa/lightbox":
+supported(): boolean                         is WebGL available
+registerEffect(name, effect): void           add a named shader effect
+checkEffect(effect | fragment): string|null  compile a shader now; null when it compiles, else the compiler message
+effectNames(): string[]                      names registered so far
+UNFURL_LABELS, PROCESSION_LABELS             the default English strings
+
+====================================================================
+2. procession(element, options): the slider
+====================================================================
+
+The element keeps its own children; the slider adds a track, dots, arrows and a live region. Default aspect ratio 4:3 (override with CSS: aspect-ratio or height).
+
+Options (all optional except photos):
+photos        (Photo | string)[]   Photo = { src, srcset?, sizes?, alt?, width?, height? }
+label         string               shorthand for labels.region. Default "Photos"
+labels        Partial<ProcessionLabels>   region, hint, next, previous, pause, play, position ("Photo {n} of {total}")
+start         number               default 0
+dots          boolean              default true
+arrows        boolean              default true (hover with a mouse, and keyboard focus)
+snap          "mandatory" | "proximity"   default "mandatory"
+loop          boolean              default false; arrows, keys and autoplay wrap (rewind)
+autoplay      number | false       ms between moves (min 1500). Default false. Pauses on hover, focus, hidden tab, off screen, reduced motion; adds a pause button
+priority      boolean              first photo loads eagerly with high fetch priority. Default false
+lazyMargin    string               IntersectionObserver rootMargin for loading the other photos. Default "100px"
+reducedMotion "system" | "always" | "never"   default "system"
+announce      boolean              polite live region on change. Default true
+Hooks: onSlideChange(index, { index, from }), onChange (same), onAnimationStart({ type: "slide", index }), onAnimationEnd(...), onError({ index, src, reason: "load" }), onSelect(index, img)
+
+Returns: { index, el, go(i, smooth = true), next(), prev(), play(), pause(), image(i), destroy() }
+
+Keyboard: the track is one tab stop. Left and Right step, Home and End jump, Enter calls onSelect.
+
+====================================================================
+3. unfurl(options): the lightbox
+====================================================================
+
+Opens immediately and returns controls. It closes itself on Escape, the close button, a tap outside the controls, or a pull down.
+
+Options (all optional except photos):
+photos        (UnfurlPhoto | string)[]   UnfurlPhoto = { src, alt?, caption? }. Use full-size sources.
+start         number               photo to open on. Default 0
+origin        (i) => Element | DOMRect | null   where photo i sits on the page now. It springs from there and back. Null or off screen: it fades.
+effect        "displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | Effect object. Default "displacement"
+renderer      "auto" | "webgl" | "css"   default "auto" (WebGL when available, else CSS)
+reducedMotion "system" | "always" | "never"   default "system"; reduced = short fade, no spring, no effect
+label         string               shorthand for labels.dialog
+labels        Partial<UnfurlLabels>   dialog, close, next, previous, position ("Photo {n} of {total}"), counter ("{n} / {total}")
+focusTrap     boolean              default true (also sets aria-modal)
+returnFocus   boolean | HTMLElement   default true: focus returns to the element focused before opening
+announce      boolean              default true
+hideOrigin    boolean              hide the origin element while its photo is out. Default true
+radius        number               corner radius at the spot. Default 16 (match your thumbnails)
+openRadius    number               corner radius when open. Default 12
+container     HTMLElement          mount point and event target. Default document.body
+Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ index }), onCloseEnd({ index }),
+       onChange(index, { index, from, how: "key" | "button" | "swipe" | "api" }),
+       onAnimationStart({ type: "open" | "close" | "change", index }), onAnimationEnd(same),
+       onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback: "css" | "none", message? })
+
+Returns: { index, renderer: "webgl" | "css", next(), prev(), show(i), close(), destroy() }
+
+====================================================================
+4. EVENTS
+====================================================================
+
+Every hook is also a bubbling CustomEvent "frankaa:" + kebab-case name, with the hook's detail object:
+frankaa:open-start, frankaa:open-end, frankaa:close-start, frankaa:close-end, frankaa:change,
+frankaa:slide-change, frankaa:animation-start, frankaa:animation-end, frankaa:error.
+Slider events fire on the slider element. Lightbox events fire on options.container (default document.body).
+
+document.addEventListener("frankaa:error", (e) => console.warn(e.detail));
+
+====================================================================
+5. RECIPES
+====================================================================
+
+--- 5.1 Vanilla: a slider card that opens the lightbox ---
+
+<div id="card"></div>
+<script type="module">
+  import { procession, unfurl } from "frankaa";
+  import "frankaa/style.css"; // or a <link rel="stylesheet"> to node_modules/frankaa/dist/style.css
+
+  const photos = [
+    { src: "/img/a-800.jpg", srcset: "/img/a-800.jpg 800w, /img/a-1600.jpg 1600w", sizes: "(max-width: 720px) 100vw, 360px", alt: "Terrace" },
+    { src: "/img/b-800.jpg", alt: "Pool" },
+  ];
+  const big = [{ src: "/img/a-1600.jpg", alt: "Terrace", caption: "The terrace at dusk" }, { src: "/img/b-1600.jpg", alt: "Pool" }];
+
+  const slider = procession(document.getElementById("card"), {
+    photos,
+    label: "Sea terrace",
+    onSelect: (i) => unfurl({
+      photos: big,
+      start: i,
+      radius: 12,                           // the card's corner radius
+      origin: (n) => slider.image(n),       // spring from the slider's image
+      onChange: (n) => slider.go(n, false), // keep the slider in step so it closes to the right spot
+    }),
+  });
+</script>
+
+--- 5.2 Vanilla: a gallery grid with the lightbox ---
+
+const thumbs = [...document.querySelectorAll(".gallery img")];
+const photos = thumbs.map((img) => ({ src: img.dataset.full, alt: img.alt }));
+thumbs.forEach((img, i) => {
+  img.closest("button").addEventListener("click", () =>
+    unfurl({ photos, start: i, origin: (n) => thumbs[n], label: "Gallery" }));
+});
+// Wrap each thumbnail in a <button type="button" aria-label="Open photo 1: ..."> so it is keyboard reachable.
+
+--- 5.3 React ---
+
+"use client";
+import { useRef } from "react";
+import { Procession, useUnfurl, type ProcessionHandle } from "frankaa/react";
+import "frankaa/style.css";
+
+export function ListingCard({ photos }: { photos: { src: string; alt: string }[] }) {
+  const slider = useRef<ProcessionHandle>(null);
+  const lightbox = useUnfurl(photos, {
+    origin: (n) => slider.current?.image(n) ?? null,
+    onChange: (n) => slider.current?.go(n, false),
+    onCloseEnd: ({ index }) => console.log("closed on", index),
+  });
+  return <Procession ref={slider} photos={photos} label="Listing photos" onSelect={(i) => lightbox.open(i)} />;
+}
+
+Notes: Procession rebuilds only when the photo sources or shape options (loop, autoplay, snap, dots, arrows, labels, reducedMotion) change. Hook props always call the latest function. useUnfurl closes the lightbox on unmount.
+
+--- 5.4 Next.js (App Router) ---
+
+// app/listing/[id]/gallery.tsx
+"use client";
+import { useRef } from "react";
+import { Procession, useUnfurl } from "frankaa/react";
+import "frankaa/style.css";
+export default function Gallery({ photos }) { /* as 5.3 */ }
+
+// app/listing/[id]/page.tsx (a server component) renders <Gallery photos={...} />.
+// frankaa touches the DOM only inside effects and event handlers, so importing it on the server is safe.
+// Do not call procession() or unfurl() at module top level or during render.
+// next.config: no transpilePackages needed (ESM with type declarations).
+// Photos on another host: either send CORS headers on them, or pass renderer: "css" (see 6).
+
+--- 5.5 A gallery grid in React ---
+
+"use client";
+import { useRef } from "react";
+import { useUnfurl } from "frankaa/react";
+
+export function Grid({ photos }) {
+  const refs = useRef<(HTMLImageElement | null)[]>([]);
+  const lightbox = useUnfurl(photos, { origin: (n) => refs.current[n] ?? null });
+  return (
+    <div className="grid">
+      {photos.map((p, i) => (
+        <button key={p.src} type="button" aria-label={`Open photo ${i + 1}: ${p.alt}`} onClick={() => lightbox.open(i)}>
+          <img ref={(el) => { refs.current[i] = el; }} src={p.thumb} alt="" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+--- 5.6 The CSS renderer (no WebGL at all) ---
+
+unfurl({ photos, origin, renderer: "css", effect: "zoom" });
+// Effects in CSS: displacement -> slide, ripple -> zoom, zoom -> zoom, fade -> fade, none -> cut.
+// Custom effects choose with their css field (default "fade").
+
+--- 5.7 Reduced motion ---
+
+unfurl({ photos, reducedMotion: "system" });  // default: follows prefers-reduced-motion
+unfurl({ photos, reducedMotion: "always" });  // always a short fade, no spring or effect
+procession(el, { photos, reducedMotion: "never", autoplay: 4000 }); // ignore the setting (use sparingly)
+
+--- 5.8 Labels in another language ---
+
+unfurl({
+  photos,
+  labels: { dialog: "Fotos", close: "Cerrar", next: "Siguiente", previous: "Anterior", position: "Foto {n} de {total}", counter: "{n} de {total}" },
+});
+procession(el, {
+  photos,
+  labels: { region: "Fotos", hint: "usa las flechas para moverte", next: "Siguiente", previous: "Anterior", pause: "Pausar", play: "Reproducir", position: "Foto {n} de {total}" },
+});
+
+--- 5.9 Hooks and events ---
+
+unfurl({
+  photos,
+  onOpenStart: ({ index }) => analytics.track("lightbox_open", { index }),
+  onChange: (index, { from, how }) => analytics.track("lightbox_move", { index, from, how }),
+  onAnimationStart: ({ type }) => document.body.classList.add("is-animating"),
+  onAnimationEnd: ({ type }) => document.body.classList.remove("is-animating"),
+  onError: ({ reason, src, message }) => console.warn("frankaa", reason, src, message),
+  onCloseEnd: () => {},
+});
+document.addEventListener("frankaa:slide-change", (e) => console.log(e.detail.index));
+
+--- 5.10 A custom shader effect ---
+
+import { registerEffect, checkEffect, unfurl } from "frankaa";
+
+const fragment = `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform float uProgress;
+uniform vec2 uResolution;
+uniform vec2 uFromSize;
+uniform vec2 uToSize;
+uniform float uTiles;
+float hash(vec2 q) { return fract(sin(dot(q, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec2 grid = vec2(uTiles * uResolution.x / uResolution.y, uTiles);
+  vec2 cell = floor(vUv * grid);
+  float t = clamp((uProgress - hash(cell) * 0.55) / 0.45, 0.0, 1.0);
+  vec2 uv = mix(vUv, (cell + 0.5) / grid, sin(t * 3.14159));
+  vec4 a = texture2D(uFrom, mirrorUv(coverUv(uv, uFromSize, uResolution)));
+  vec4 b = texture2D(uTo, mirrorUv(coverUv(uv, uToSize, uResolution)));
+  gl_FragColor = mix(a, b, step(0.5, t));
+}`;
+
+const problem = checkEffect(fragment);           // null, or the compiler message
+registerEffect("mosaic", { fragment, uniforms: { uTiles: 9 }, duration: 900, easing: "linear", css: "fade" });
+unfurl({ photos, effect: "mosaic" });
+unfurl({ photos, effect: { fragment, uniforms: { uTiles: 6 } } }); // inline, without registering
+
+Shader contract:
+- GLSL ES 1.0 fragment shader. Start with "precision mediump float;". Write gl_FragColor.
+- varying vec2 vUv: 0 to 1 across the photo's box, (0, 0) top left.
+- uniform sampler2D uFrom, uTo: the photo leaving and arriving.
+- uniform float uProgress: 0 to 1, already eased by the effect's easing.
+- uniform vec2 uResolution: the box in device pixels.
+- uniform vec2 uFromSize, uToSize: natural photo sizes in pixels.
+- uniform float uTime: seconds since the lightbox opened.
+- uniform float uDirection: +1 next, -1 previous.
+- Your uniforms: number -> float, [a, b] -> vec2, [a, b, c] -> vec3, [a, b, c, d] -> vec4. Declare them with the same names.
+- Predefined macros: coverUv(uv, texSize, resolution) cover-fits; mirrorUv(uv) mirrors into 0 to 1 (no edge smear).
+- The lightbox clips to the rounded box and runs the open and close spring itself.
+- Compile errors: onError({ reason: "shader", message }) and the lightbox uses the CSS renderer. Never a blank screen.
+- Reduced motion replaces every effect with a fade.
+- Effect object: { fragment, uniforms?, duration? (ms, default 520), easing? ("linear" | "ease-in-out" | (t) => number), css? ("fade" | "slide" | "zoom" | "none") }.
+- Shaders run on the GPU with no network or DOM access. Only use shaders you trust; never compile user-supplied shader source.
+
+====================================================================
+6. RULES OF THUMB
+====================================================================
+
+- renderer "auto" is right for most sites. Use "css" when photos are on another origin without CORS headers, for the lightest path, or when WebGL is unwanted.
+- Photos from a CDN with WebGL: the CDN must send Access-Control-Allow-Origin. Without it, frankaa falls back to CSS and fires onError with reason "cors".
+- Always pass alt text. Captions are optional and shown under the photo.
+- Pass origin so it springs from and back to the thumbnail; match radius to the thumbnail's border radius.
+- When the lightbox is opened from a slider, keep the slider in step with onChange: (n) => slider.go(n, false).
+- Give the slider's element a size (width from layout; height from aspect-ratio, default 4:3) so nothing shifts while photos load. Pass width and height on photos.
+- Autoplay is off by default; leave it off unless asked.
+- CSP: no eval, no innerHTML, styles through the CSSOM; img-src must allow the photos.

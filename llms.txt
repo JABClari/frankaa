@@ -1,0 +1,36 @@
+# frankaa
+
+> A photo slider (procession) and a photo lightbox (unfurl) for the web. Framework-free TypeScript, zero runtime dependencies, optional React bindings, MIT. The lightbox springs from the photo's spot and changes photos with WebGL shader effects (built-in or custom) or a CSS renderer (transform and opacity only).
+
+Install: `npm install frankaa`. Import the CSS once: `import "frankaa/style.css"`.
+
+## Docs
+
+- [Live demo and playground](https://jabclari.github.io/frankaa/)
+- [Full reference and recipes](https://jabclari.github.io/frankaa/llms-full.txt): also `node_modules/frankaa/llms-full.txt`
+- [README](https://github.com/JABClari/frankaa#readme)
+- [Agent guide](https://github.com/JABClari/frankaa/blob/main/AGENTS.md)
+
+## Imports
+
+- `frankaa`: everything below
+- `frankaa/slider`: `procession(element, options)`
+- `frankaa/lightbox`: `unfurl(options)`, `supported()`, `registerEffect(name, effect)`, `checkEffect(effect)`, `effectNames()`
+- `frankaa/react`: `<Procession ref photos ... />`, `useUnfurl(photos, options)` returning `{ open(i), close() }`
+- `frankaa/style.css`
+
+## Slider options
+
+photos (required), label, labels, start, dots, arrows, snap ("mandatory" | "proximity"), loop, autoplay (ms or false, default false), priority, lazyMargin ("100px"), reducedMotion ("system" | "always" | "never"), announce. Returns { index, el, go(i, smooth?), next(), prev(), play(), pause(), image(i), destroy() }.
+
+## Lightbox options
+
+photos (required, { src, alt?, caption? } or string), start, origin ((i) => Element | DOMRect | null), effect ("displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | { fragment, uniforms?, duration?, easing?, css? }), renderer ("auto" | "webgl" | "css"), reducedMotion, label, labels, focusTrap (true), returnFocus (true | HTMLElement | false), announce (true), hideOrigin (true), radius (16), openRadius (12), container. Returns { index, renderer, next(), prev(), show(i), close(), destroy() }.
+
+## Hooks (also DOM CustomEvents "frankaa:<kebab-name>", bubbling)
+
+onOpenStart, onOpenEnd, onCloseStart, onCloseEnd, onChange(index, detail), onSlideChange(index, detail) (slider), onAnimationStart({ type }), onAnimationEnd({ type }), onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback, message? }), onSelect(index, img) (slider).
+
+## Custom shader contract
+
+GLSL ES 1.0 fragment shader: `precision mediump float;`, `varying vec2 vUv`, uniforms uFrom, uTo (sampler2D), uProgress (0 to 1), uResolution, uFromSize, uToSize (vec2), uTime, uDirection (float), plus your own; write gl_FragColor. Macros coverUv(uv, texSize, resolution) and mirrorUv(uv) are predefined. Compile errors fire onError and fall back to CSS.

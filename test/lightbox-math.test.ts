@@ -52,3 +52,39 @@ test("onScreen rejects tiny and off-screen spots", () => {
   assert.ok(!onScreen({ left: -400, top: 10, width: 200, height: 150 }, 1000, 800));
   assert.ok(!onScreen({ left: 10, top: 900, width: 200, height: 150 }, 1000, 800));
 });
+
+import { flipFrame, pickRenderer, radiusAt, stepBox } from "../src/lightbox-math.ts";
+
+test("flipFrame moves and scales the layer and keeps the photo undistorted", () => {
+  const rest = { x: 100, y: 50, w: 800, h: 600 };
+  assert.deepEqual(flipFrame(rest, rest), { tx: 0, ty: 0, sx: 1, sy: 1, ix: 1, iy: 1 });
+  const f = flipFrame({ x: 10, y: 20, w: 200, h: 200 }, rest);
+  assert.equal(f.tx, -90); assert.equal(f.ty, -30);
+  assert.equal(f.sx, 0.25); assert.ok(Math.abs(f.sy - 1 / 3) < 1e-9);
+  // The photo's own scale times the layer's scale is the same on both axes (no stretch), and covers the box.
+  assert.ok(Math.abs(f.ix * f.sx - f.iy * f.sy) < 1e-9);
+  assert.ok(f.ix >= 1 && f.iy >= 1);
+});
+
+test("radiusAt runs from the spot radius to the open radius and back", () => {
+  const t = { x: 0, y: 0, w: 1000, h: 800 };
+  assert.equal(radiusAt(false, t, t, 16, 12), 12);
+  assert.equal(radiusAt(false, { x: 0, y: 0, w: 0, h: 0 }, t, 16, 12), 16);
+  assert.equal(radiusAt(true, t, t, 16, 12), 16);
+});
+
+test("stepBox springs all four sides to the target", () => {
+  const box = { x: 0, y: 0, w: 10, h: 10 }, vel = [0, 0, 0, 0], target = { x: 300, y: 200, w: 800, h: 600 };
+  let n = 0;
+  while (stepBox(box, vel, target, 1 / 60, SPRING_OPEN) && n < 240) n++;
+  assert.ok(n < 120, `took ${n} frames`);
+  assert.ok(Math.abs(box.w - 800) < 0.25 && Math.abs(box.y - 200) < 0.25);
+});
+
+test("pickRenderer: css when asked or without WebGL, else WebGL", () => {
+  assert.equal(pickRenderer("auto", true), "webgl");
+  assert.equal(pickRenderer(undefined, true), "webgl");
+  assert.equal(pickRenderer("auto", false), "css");
+  assert.equal(pickRenderer("css", true), "css");
+  assert.equal(pickRenderer("webgl", false), "css");
+});

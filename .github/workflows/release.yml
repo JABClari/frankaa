@@ -1,0 +1,33 @@
+name: Release
+
+# Publishes to npm when a GitHub release is published. Uses npm trusted publishing (GitHub OIDC): no npm token
+# is stored, and npm attaches a provenance statement. The package must be linked to this repository and this
+# workflow file once on npmjs.com (see README, Releasing).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
+      - run: npm ci --ignore-scripts
+      - name: Tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "${{ github.event.release.tag_name }}"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --provenance --access public

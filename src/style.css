@@ -17,6 +17,7 @@
 :where(.fk-procession) { position: relative; overflow: hidden; aspect-ratio: 4 / 3; border-radius: var(--fk-radius); background: var(--fk-placeholder); isolation: isolate; }
 :where(.fk-track) { display: flex; height: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; outline: none; }
 :where(.fk-track)::-webkit-scrollbar { display: none; }
+:where(.fk-track.fk-proximity) { scroll-snap-type: x proximity; }
 :where(.fk-track.fk-selectable) { cursor: zoom-in; }
 :where(.fk-photo) { flex: none; display: block; width: 100%; height: 100%; object-fit: cover; scroll-snap-align: center; scroll-snap-stop: always; -webkit-user-drag: none; user-select: none; -webkit-touch-callout: none; }
 :where(.fk-procession:has(.fk-track:focus-visible)) { outline: 2px solid var(--fk-focus, #23306b); outline-offset: 2px; }
@@ -36,15 +37,20 @@
 }
 :where(.fk-procession:has(.fk-track:focus-visible)) :where(.fk-arrow) { opacity: 1; transform: none; }
 @media (hover: none) { :where(.fk-arrow) { display: none; } }
+:where(.fk-play) { position: absolute; right: 8px; bottom: 6px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: rgba(22, 19, 15, .45); color: #fff; display: grid; place-items: center; cursor: pointer; transition: transform 160ms var(--fk-ease), background 160ms; }
+:where(.fk-play[hidden]) { display: none; }
+:where(.fk-play:active) { transform: scale(.92); }
+:where(.fk-play:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
 
 /* ---------- unfurl ---------- */
 :where(.fk-unfurl) { position: fixed; inset: 0; z-index: var(--fk-z, 1000); touch-action: none; font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; }
 :where(.fk-unfurl-bg) { position: absolute; inset: 0; background: var(--fk-backdrop); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fk-in .2s var(--fk-ease); transition: opacity .16s ease; }
-:where(.fk-unfurl[data-phase="closing"]) :where(.fk-unfurl-bg) { opacity: 0; }
+:where(.fk-unfurl[data-phase="closing"], .fk-unfurl[data-phase="closed"]) :where(.fk-unfurl-bg) { opacity: 0; }
 :where(.fk-unfurl-gl) { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-:where(.fk-unfurl-img) { position: absolute; inset: 72px 88px 88px; width: calc(100% - 176px); height: calc(100% - 160px); object-fit: contain; pointer-events: none; user-select: none; }
-:where(.fk-unfurl[data-mode="gl"]) :where(.fk-unfurl-img), :where(.fk-unfurl:not([data-mode])) :where(.fk-unfurl-img) { display: none; }
-:where(.fk-unfurl[data-mode="dom"]) :where(.fk-unfurl-gl) { display: none; }
+:where(.fk-unfurl-css) { position: absolute; inset: 0; pointer-events: none; }
+:where(.fk-unfurl-frame) { position: absolute; overflow: hidden; transform-origin: 0 0; backface-visibility: hidden; }
+:where(.fk-unfurl-img) { display: block; width: 100%; height: 100%; object-fit: cover; transform-origin: 50% 50%; user-select: none; -webkit-user-drag: none; }
+:where(.fk-unfurl[data-renderer="css"]) :where(.fk-unfurl-gl) { display: none; }
 :where(.fk-unfurl-top) { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 8px; z-index: 1; }
 :where(.fk-unfurl-n) { flex: 1; color: rgba(255, 255, 255, .8); font-variant-numeric: tabular-nums; padding-left: 8px; }
 :where(.fk-unfurl-btn) { width: 40px; height: 40px; padding: 0; border: 0; border-radius: 999px; display: grid; place-items: center; background: rgba(255, 255, 255, .12); color: #fff; cursor: pointer; transition: transform .16s var(--fk-ease), background .2s ease; }
@@ -60,10 +66,9 @@
 :where(.fk-unfurl[data-phase="opening"], .fk-unfurl[data-phase="closing"]) :where(.fk-unfurl-top, .fk-unfurl-prev, .fk-unfurl-next, .fk-unfurl-cap) { opacity: 0; }
 @media (max-width: 719px) {
   :where(.fk-unfurl-prev, .fk-unfurl-next) { display: none; }
-  :where(.fk-unfurl-img) { inset: 64px 12px 96px; width: calc(100% - 24px); height: calc(100% - 160px); }
 }
 @keyframes fk-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   :where(.fk-unfurl-bg) { animation-duration: .15s; }
-  :where(.fk-dot, .fk-arrow, .fk-unfurl-btn) { transition: none; }
+  :where(.fk-dot, .fk-arrow, .fk-play, .fk-unfurl-btn) { transition: none; }
 }

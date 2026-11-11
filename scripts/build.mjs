@@ -18,12 +18,12 @@ await build({
   chunkNames: "chunks/[name]-[hash]",
   legalComments: "none",
   plugins: [{
-    // The shaders are plain strings to esbuild; squeeze their whitespace (GLSL here has no preprocessor lines).
+    // The shaders are plain strings to esbuild; squeeze their whitespace (one line per line, so #define lines survive).
     name: "glsl-min",
     setup(b) {
-      b.onLoad({ filter: /lightbox-gl\.ts$/ }, (a) => ({
+      b.onLoad({ filter: /(lightbox-gl|effects)\.ts$/ }, (a) => ({
         loader: "ts",
-        contents: readFileSync(a.path, "utf8").replace(/`([^`]*)`/g, (_, g) => "`" + g.replace(/\s+/g, " ").replace(/ ?([{}();,=*+\-/<>]) ?/g, "$1").trim() + "`"),
+        contents: readFileSync(a.path, "utf8").replace(/`([^`]*)`/g, (_, g) => "`" + g.split("\n").map((l) => l.replace(/\s+/g, " ").replace(/ ?([{}();,=*+\-/<>?:]) ?/g, "$1").trim()).filter(Boolean).join("\n") + "`"),
       }));
     },
   }],
@@ -38,6 +38,9 @@ for (const f of readdirSync("dist", { recursive: true })) {
   const p = join("dist", f);
   if (statSync(p).isFile() && !p.endsWith(".d.ts")) cpSync(p, join("docs/lib", f));
 }
+
+// The AI-facing files are served from the docs site too.
+for (const f of ["llms.txt", "llms-full.txt"]) cpSync(f, join("docs", f));
 
 // Size of each entry with the chunks it imports, minified and gzipped.
 const read = (p) => readFileSync(p);

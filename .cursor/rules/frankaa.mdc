@@ -1,0 +1,16 @@
+---
+description: Using the frankaa photo slider and lightbox
+globs: ["**/*.tsx", "**/*.jsx", "**/*.ts", "**/*.js", "**/*.vue", "**/*.svelte", "**/*.html"]
+alwaysApply: false
+---
+
+- frankaa = `procession` (slider) + `unfurl` (lightbox). Full reference: `node_modules/frankaa/llms-full.txt`.
+- Always `import "frankaa/style.css"` once.
+- Imports: `frankaa/slider`, `frankaa/lightbox`, `frankaa`, `frankaa/react` (`Procession`, `useUnfurl`).
+- SSR (Next.js etc.): client components only; never call `procession()`/`unfurl()` at module top level or in render.
+- Pass `origin` (thumbnail element) and match `radius` to the thumbnail. From a slider: `origin: (n) => slider.image(n)`, `onChange: (n) => slider.go(n, false)`.
+- `renderer: "auto"` by default; `"css"` for cross-origin photos without CORS headers.
+- Photos always have `alt`; slider keeps an aspect ratio; pass `width`/`height`.
+- Autoplay off and `reducedMotion: "system"` unless asked. Translate with `labels`.
+- Custom shaders: GLSL ES 1.0 with `precision mediump float;`, `vUv`, `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`; write `gl_FragColor`; use `coverUv()`/`mirrorUv()`. `registerEffect` + `checkEffect`. Errors fall back to CSS via `onError`. Never compile user-supplied shaders.
+- Verify: keyboard, focus trap and return, reduced motion fade, no layout shift, no `frankaa:error`.

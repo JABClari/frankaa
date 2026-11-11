@@ -1,9 +1,17 @@
 {
   "name": "frankaa",
   "version": "0.1.0",
-  "description": "A photo slider that follows the finger and a WebGL lightbox that springs from its spot. Framework-free TypeScript, zero dependencies, thin React bindings.",
+  "description": "A photo slider that follows the finger and a lightbox that unfurls each photo from its spot, with WebGL shader effects or a CSS fallback. Framework-free TypeScript, zero dependencies, thin React bindings.",
   "license": "MIT",
   "author": "Joshua, Sirius Arc",
+  "homepage": "https://jabclari.github.io/frankaa/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JABClari/frankaa.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JABClari/frankaa/issues"
+  },
   "type": "module",
   "sideEffects": [
     "*.css"
@@ -30,22 +38,39 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "llms.txt",
+    "llms-full.txt",
+    "AGENTS.md",
+    "skills"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "slider",
     "carousel",
     "scroll-snap",
     "lightbox",
-    "webgl",
     "gallery",
     "photos",
-    "react"
+    "webgl",
+    "shader",
+    "glsl",
+    "transition",
+    "flip",
+    "react",
+    "nextjs",
+    "typescript",
+    "accessible",
+    "a11y",
+    "reduced-motion",
+    "zero-dependency",
+    "llms-txt",
+    "ai-ready"
   ],
   "peerDependencies": {
     "react": ">=18"
@@ -55,12 +80,16 @@
       "optional": true
     }
   },
-  "engines": {
-    "node": ">=18"
-  },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

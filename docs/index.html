@@ -4,110 +4,253 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>frankaa</title>
-<meta name="description" content="frankaa: a photo slider that follows the finger and a WebGL lightbox that springs from its spot. Zero dependencies.">
+<meta name="description" content="frankaa: a photo slider that follows the finger and a lightbox that unfurls each photo from its spot. Zero dependencies.">
 <link rel="icon" href="frankaa-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="lib/style.css">
 <style>
 :root {
-  --red: #C8322B; --gold: #E9B23A; --indigo: #23306B; --green: #1F6B4A; --cream: #F4EBDD; --ink: #16130F;
-  --paper: #FBF8F3; --ink-2: #5f574d; --line: rgba(22, 19, 15, .08); --code: #fff;
+  --red: #C8322B; --gold: #E9B23A; --indigo: #23306B; --cream: #F4EBDD; --ink: #16130F;
+  --paper: #FBF9F5; --card: #fff; --ink-2: #6a6157; --ink-3: #9a9187;
+  --hair: 0 0 0 1px rgba(22, 19, 15, .07); --lift: 0 0 0 1px rgba(22, 19, 15, .06), 0 1px 2px rgba(22, 19, 15, .06), 0 4px 12px -4px rgba(22, 19, 15, .08);
+  --ease: cubic-bezier(.23, 1, .32, 1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --fk-focus: var(--indigo);
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-a { color: var(--indigo); text-underline-offset: 3px; }
-main { max-width: 1120px; margin: 0 auto; padding: 0 16px 72px; }
-h1, h2, .word { font-family: "Avenir Next", Futura, "Helvetica Neue", Arial, sans-serif; letter-spacing: -.02em; }
-h2 { font-size: 26px; line-height: 1.2; margin: 0 0 4px; }
-h2 small { font-size: 15px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; margin-left: 8px; }
-section { padding: 56px 0 0; }
-.lead { margin: 0 0 22px; color: var(--ink-2); max-width: 60ch; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+::selection { background: rgba(35, 48, 107, .14); }
+a { color: inherit; text-decoration: underline; text-decoration-color: rgba(22, 19, 15, .22); text-underline-offset: 3px; transition: text-decoration-color .2s ease; }
+a:hover { text-decoration-color: currentColor; }
+main :focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; border-radius: 6px; }
+main { max-width: 1040px; margin: 0 auto; padding: 0 16px 80px; }
+.prose { max-width: 58ch; }
+h1, h2, .word { font-family: "Avenir Next", Futura, "Helvetica Neue", Arial, sans-serif; }
+h2 { font-size: 22px; line-height: 1.2; letter-spacing: -.01em; margin: 0; font-weight: 700; }
+.head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; }
+.kicker { color: var(--ink-3); font-size: 14px; }
+section { padding-top: 72px; }
+.lead { margin: 0 0 22px; color: var(--ink-2); }
+kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px; background: var(--card); box-shadow: var(--hair), 0 1px 0 rgba(22, 19, 15, .08); font: 500 12px/18px var(--mono); text-align: center; color: var(--ink); vertical-align: 1px; }
 
 /* Hero */
-.hero { display: flex; align-items: center; gap: 20px; padding: 56px 0 8px; flex-wrap: wrap; }
-.hero svg { flex: none; }
-.word { font-size: 56px; font-weight: 700; line-height: 1; margin: 0; }
-.say { margin: 6px 0 0; color: var(--ink-2); font-size: 16px; }
-.pitch { margin: 20px 0 0; font-size: 18px; max-width: 46ch; }
-.install { display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; padding: 10px 14px; border-radius: 10px; background: var(--code); box-shadow: 0 0 0 1px var(--line); font: 500 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.install span { color: var(--ink-2); }
+.hero { display: flex; align-items: center; gap: 18px; padding: 72px 0 0; }
+.hero svg { flex: none; transition: transform .5s var(--ease); }
+.hero:hover svg { transform: rotate(-4deg) translateY(-1px); }
+.word { font-size: 52px; font-weight: 700; line-height: 1; margin: 0; letter-spacing: -.03em; }
+.say { margin: 6px 0 0; color: var(--ink-3); font-size: 15px; }
+.pitch { margin: 24px 0 0; font-size: 18px; line-height: 1.5; max-width: 40ch; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 22px; }
+.install { display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 6px 0 14px; border-radius: 10px; background: var(--card); box-shadow: var(--lift); font: 500 13.5px/1 var(--mono); }
+.install span { color: var(--ink-3); }
+.toc { display: flex; gap: 16px; font-size: 14px; color: var(--ink-2); }
+.toc a { text-decoration: none; }
+.toc a:hover { color: var(--ink); }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-2); font: 500 12.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; transition: transform .16s var(--ease), background .2s ease, color .2s ease; }
+.btn:hover { background: rgba(22, 19, 15, .05); color: var(--ink); }
+.btn:active { transform: scale(.96); }
+.btn.solid { background: var(--ink); color: #fff; height: 32px; padding: 0 14px; font-size: 13px; }
+.btn.solid:hover { background: #2b2620; }
+.copy .ok { display: none; }
+.copy.done .ok { display: inline; }
+.copy.done .go { display: none; }
 
 /* Slider cards */
-.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 20px; }
-.card .t { margin: 10px 0 0; font-weight: 600; }
-.card .s { margin: 0; color: var(--ink-2); font-size: 14px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 20px; }
+.card .t { margin: 12px 0 0; font-weight: 600; }
+.card .s { margin: 0; color: var(--ink-3); font-size: 14px; }
 
 /* Lightbox grid */
 .gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.gallery button { padding: 0; border: 0; background: var(--cream); border-radius: 16px; overflow: hidden; cursor: zoom-in; aspect-ratio: 1; }
-.gallery button:first-child { grid-column: span 2; grid-row: span 2; }
-.gallery img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 16px; transition: transform .3s var(--fk-ease); }
-@media (hover: hover) and (pointer: fine) { .gallery button:hover img { transform: scale(1.02); } }
-.gallery button:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
-.opts { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 14px 0 0; color: var(--ink-2); font-size: 14px; }
-.opts label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-.opts input { width: 16px; height: 16px; accent-color: var(--indigo); margin: 0; }
-.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--cream); color: var(--ink); font-size: 12.5px; font-weight: 600; }
+.tile { padding: 0; border: 0; background: var(--cream); border-radius: 16px; overflow: hidden; cursor: zoom-in; aspect-ratio: 1; transition: transform .2s var(--ease); }
+.gallery .tile:first-child { grid-column: span 2; grid-row: span 2; }
+.tile img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 16px; transition: transform .5s var(--ease), filter .3s ease; }
+@media (hover: hover) and (pointer: fine) { .tile:hover img { transform: scale(1.025); } }
+.tile:active { transform: scale(.98); }
+
+/* Playground */
+.panel { background: var(--card); border-radius: 16px; box-shadow: var(--lift); overflow: hidden; }
+.controls { display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 14px 28px; padding: 18px 20px; }
+.field { display: grid; gap: 6px; font-size: 12.5px; color: var(--ink-3); min-width: 0; }
+.field > span { font-weight: 500; }
+.seg { display: inline-flex; padding: 2px; border-radius: 9px; background: rgba(22, 19, 15, .045); }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg span { display: block; padding: 0 10px; height: 28px; line-height: 28px; border-radius: 7px; color: var(--ink-2); font-size: 13px; transition: background .2s ease, color .2s ease, box-shadow .2s ease; }
+.seg label:hover span { color: var(--ink); }
+.seg input:checked + span { background: var(--card); color: var(--ink); box-shadow: 0 0 0 1px rgba(22, 19, 15, .06), 0 1px 2px rgba(22, 19, 15, .1); }
+.seg input:focus-visible + span { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.select { position: relative; display: inline-block; }
+.select select { appearance: none; height: 32px; padding: 0 30px 0 10px; border: 0; border-radius: 8px; background: rgba(22, 19, 15, .045); color: var(--ink); font: 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; }
+.select::after { content: ""; position: absolute; right: 11px; top: 12px; width: 6px; height: 6px; border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); pointer-events: none; }
+.toggles { display: flex; gap: 14px; height: 32px; align-items: center; }
+.toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 13px; cursor: pointer; }
+.toggle input { appearance: none; width: 28px; height: 16px; margin: 0; border-radius: 999px; background: rgba(22, 19, 15, .14); position: relative; cursor: pointer; transition: background .2s ease; }
+.toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .25s var(--ease); }
+.toggle input:checked { background: var(--indigo); }
+.toggle input:checked::after { transform: translateX(12px); }
+.try { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 20px 18px; }
+.try .tile { aspect-ratio: 4 / 3; border-radius: 12px; }
+.try .tile img { border-radius: 12px; }
+.editor { box-shadow: 0 -1px 0 rgba(22, 19, 15, .06); }
+.editor summary { display: flex; align-items: center; gap: 8px; padding: 12px 20px; font-size: 13px; color: var(--ink-2); cursor: pointer; list-style: none; }
+.editor summary::-webkit-details-marker { display: none; }
+.editor summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s var(--ease); }
+.editor[open] summary::before { transform: rotate(45deg); }
+.editor summary:hover { color: var(--ink); }
+.editor .body { padding: 0 20px 16px; display: grid; gap: 10px; }
+textarea { width: 100%; min-height: 260px; padding: 12px 14px; border: 0; border-radius: 10px; background: #FAF7F2; box-shadow: var(--hair); color: var(--ink); font: 12.5px/1.6 var(--mono); resize: vertical; tab-size: 2; }
+textarea:focus-visible { outline: 2px solid var(--indigo); outline-offset: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.status { font: 12.5px/1.5 var(--mono); color: var(--ink-2); white-space: pre-wrap; margin: 0; min-width: 0; }
+.status.bad { color: var(--red); }
+.status.good { color: #1F6B4A; }
+.console { background: #1b1814; color: #e9e2d6; font: 12px/1.7 var(--mono); }
+.console header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 8px 20px; color: #a79e91; }
+.console header .btn { color: #a79e91; }
+.console header .btn:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.console ol { list-style: none; margin: 0; padding: 0 20px 12px; height: 124px; overflow: hidden; }
+.console li { display: grid; grid-template-columns: 74px 150px minmax(0, 1fr); gap: 10px; white-space: nowrap; animation: line-in .35s var(--ease); }
+.console li span { overflow: hidden; text-overflow: ellipsis; }
+.console .tm { color: #7d756a; }
+.console .ev { color: var(--gold); }
+.console .src-slider .ev { color: #9fc2ad; }
+.console .empty { color: #7d756a; grid-template-columns: 1fr; }
+@keyframes line-in { from { opacity: 0; transform: translateY(-4px); } }
 
 /* Code */
 .code { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.code figure { margin: 0; min-width: 0; }
-.code figcaption { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
-pre { margin: 0; padding: 16px; border-radius: 12px; background: var(--code); box-shadow: 0 0 0 1px var(--line); overflow-x: auto; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+.code figure { margin: 0; min-width: 0; position: relative; }
+.code figure.wide { grid-column: 1 / -1; }
+.code figcaption { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+pre { margin: 0; padding: 16px; border-radius: 12px; background: var(--card); box-shadow: var(--hair); overflow-x: auto; font: 12.5px/1.65 var(--mono); }
+code { font-family: var(--mono); font-size: .9em; }
+pre .c { color: var(--ink-3); }
 ul.plain { margin: 0; padding-left: 18px; }
-ul.plain li { margin: 2px 0; }
+ul.plain li { margin: 3px 0; }
+ul.plain li::marker { color: var(--ink-3); }
 
-footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 13.5px; display: grid; gap: 14px; }
+footer { margin-top: 80px; padding-top: 22px; box-shadow: 0 -1px 0 rgba(22, 19, 15, .08); color: var(--ink-2); font-size: 13.5px; display: grid; gap: 12px; }
 footer .credit { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 500; }
-footer details summary { cursor: pointer; }
+footer details summary { cursor: pointer; width: max-content; }
 footer ol { margin: 8px 0 0; padding-left: 18px; }
 
-@media (max-width: 960px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 960px) {
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .controls { grid-template-columns: repeat(2, auto); }
+}
 @media (max-width: 720px) {
   .cards, .code { grid-template-columns: minmax(0, 1fr); }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .word { font-size: 44px; }
-  .hero { padding-top: 36px; }
-  section { padding-top: 44px; }
+  .controls { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .select, .select select { width: 100%; }
+  .try { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px 16px; }
+  .editor summary { padding: 12px 16px; }
+  .editor .body { padding: 0 16px 16px; }
+  .console header { padding-left: 16px; }
+  .console ol { padding: 0 16px 12px; }
+  .console li { grid-template-columns: 112px minmax(0, 1fr); }
+  .console li .tm { display: none; }
+  .word { font-size: 42px; }
+  .hero { padding-top: 44px; }
+  section { padding-top: 56px; }
+  .toc { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 </style>
 </head>
 <body>
 <main>
   <header class="hero">
-    <svg width="88" height="88" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
+    <svg width="80" height="80" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
     <div>
       <h1 class="word">frankaa</h1>
       <p class="say">said FRAN-kah</p>
     </div>
   </header>
   <p class="pitch">A photo slider that follows your finger, and a lightbox that unfurls each photo from its spot.</p>
-  <div class="install"><span>$</span> npm install frankaa</div>
+  <div class="row">
+    <div class="install"><span>$</span> npm install frankaa <button class="btn copy" type="button" data-copy="npm install frankaa" aria-label="Copy install command"><span class="go">Copy</span><span class="ok">Copied</span></button></div>
+    <nav class="toc" aria-label="On this page"><a href="#h-procession">Slider</a><a href="#h-unfurl">Lightbox</a><a href="#h-play">Playground</a><a href="#h-use">Use it</a><a href="https://github.com/JABClari/frankaa">GitHub</a></nav>
+  </div>
 
   <section aria-labelledby="h-procession">
-    <h2 id="h-procession">procession <small>the slider</small></h2>
-    <p class="lead">Swipe, scroll or use the arrow keys. Click a photo to open it.</p>
+    <div class="head"><h2 id="h-procession">procession</h2><span class="kicker">the slider</span></div>
+    <p class="lead prose">Swipe, scroll or use <kbd>&larr;</kbd> <kbd>&rarr;</kbd>. Click a photo to open it.</p>
     <div class="cards" id="cards"></div>
   </section>
 
   <section aria-labelledby="h-unfurl">
-    <h2 id="h-unfurl">unfurl <small>the lightbox</small></h2>
-    <p class="lead">Open a photo, move with the arrows or a swipe, and close with Escape or a pull down.</p>
+    <div class="head"><h2 id="h-unfurl">unfurl</h2><span class="kicker">the lightbox</span></div>
+    <p class="lead prose">Open a photo, move with the arrows or a swipe, close with <kbd>Esc</kbd> or a pull down.</p>
     <div class="gallery" id="gallery"></div>
-    <div class="opts">
-      <label><input type="checkbox" id="no-gl"> Without WebGL</label>
-      <span>Showing with <span class="pill" id="mode">WebGL</span></span>
+  </section>
+
+  <section aria-labelledby="h-play">
+    <div class="head"><h2 id="h-play">Playground</h2><span class="kicker">every demo on this page follows these</span></div>
+    <p class="lead prose">Switch the effect or the renderer, then open a photo. The events print below as they fire.</p>
+    <div class="panel">
+      <div class="controls">
+        <label class="field"><span>Effect</span>
+          <span class="select"><select id="pg-effect">
+            <option value="displacement">Displacement</option>
+            <option value="ripple">Ripple</option>
+            <option value="fade">Fade</option>
+            <option value="zoom">Zoom</option>
+            <option value="none">None</option>
+            <option value="cloth">Cloth unfurl (custom shader)</option>
+            <option value="mosaic">Mosaic (custom shader)</option>
+            <option value="yours">Your shader</option>
+          </select></span>
+        </label>
+        <div class="field"><span id="l-renderer">Renderer</span>
+          <div class="seg" role="radiogroup" aria-labelledby="l-renderer">
+            <label><input type="radio" name="renderer" value="auto" checked><span>Auto</span></label>
+            <label><input type="radio" name="renderer" value="webgl"><span>WebGL</span></label>
+            <label><input type="radio" name="renderer" value="css"><span>CSS</span></label>
+          </div>
+        </div>
+        <div class="field"><span id="l-motion">Reduced motion</span>
+          <div class="seg" role="radiogroup" aria-labelledby="l-motion">
+            <label><input type="radio" name="motion" value="system" checked><span>System</span></label>
+            <label><input type="radio" name="motion" value="always"><span>Always</span></label>
+            <label><input type="radio" name="motion" value="never"><span>Never</span></label>
+          </div>
+        </div>
+        <div class="field"><span>Slider</span>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" id="pg-loop"> Loop</label>
+            <label class="toggle"><input type="checkbox" id="pg-auto"> Autoplay</label>
+          </div>
+        </div>
+      </div>
+      <div class="try" id="try"></div>
+      <details class="editor" id="editor">
+        <summary>Write a shader</summary>
+        <div class="body">
+          <textarea id="pg-src" spellcheck="false" aria-label="Fragment shader"></textarea>
+          <div class="bar">
+            <button class="btn solid" type="button" id="pg-compile">Compile and try</button>
+            <button class="btn" type="button" id="pg-reset">Reset</button>
+            <p class="status" id="pg-status" role="status"></p>
+          </div>
+        </div>
+      </details>
+      <div class="console" aria-label="Events">
+        <header><span>Events</span><button class="btn" type="button" id="pg-clear">Clear</button></header>
+        <ol id="pg-log"><li class="empty"><span>Open a photo or swipe a slider to see events.</span></li></ol>
+      </div>
     </div>
   </section>
 
   <section aria-labelledby="h-use">
-    <h2 id="h-use">Use it</h2>
-    <p class="lead">Plain TypeScript with no dependencies. React bindings are optional.</p>
+    <div class="head"><h2 id="h-use">Use it</h2><span class="kicker">plain TypeScript, no dependencies</span></div>
+    <p class="lead prose">Import the part you need. The React bindings are optional.</p>
     <div class="code">
       <figure>
-        <figcaption>Any page</figcaption>
+        <figcaption>Any page <button class="btn copy" type="button" aria-label="Copy the any page example"><span class="go">Copy</span><span class="ok">Copied</span></button></figcaption>
 <pre><code>import { procession, unfurl } from "frankaa";
 import "frankaa/style.css";
 
@@ -124,11 +267,13 @@ const slider = procession(document.querySelector("#card"), {
 });</code></pre>
       </figure>
       <figure>
-        <figcaption>React</figcaption>
-<pre><code>import { Procession, useUnfurl } from "frankaa/react";
+        <figcaption>React <button class="btn copy" type="button" aria-label="Copy the React example"><span class="go">Copy</span><span class="ok">Copied</span></button></figcaption>
+<pre><code>"use client";
+import { useRef } from "react";
+import { Procession, useUnfurl } from "frankaa/react";
 import "frankaa/style.css";
 
-function Card({ photos }) {
+export function Card({ photos }) {
   const slider = useRef(null);
   const lightbox = useUnfurl(photos, {
     origin: (n) =&gt; slider.current?.image(n) ?? null,
@@ -138,24 +283,53 @@ function Card({ photos }) {
     onSelect={(i) =&gt; lightbox.open(i)} /&gt;;
 }</code></pre>
       </figure>
+      <figure class="wide">
+        <figcaption>Your own shader <button class="btn copy" type="button" aria-label="Copy the shader example"><span class="go">Copy</span><span class="ok">Copied</span></button></figcaption>
+<pre><code>import { registerEffect, unfurl } from "frankaa";
+
+registerEffect("wipe", {
+  duration: 600,
+  uniforms: { uSoftness: 0.08 },
+  fragment: `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uFrom, uTo;
+uniform float uProgress, uSoftness;
+uniform vec2 uResolution, uFromSize, uToSize;
+void main() {
+  vec4 a = texture2D(uFrom, coverUv(vUv, uFromSize, uResolution));
+  vec4 b = texture2D(uTo, coverUv(vUv, uToSize, uResolution));
+  float edge = smoothstep(uProgress - uSoftness, uProgress + uSoftness, vUv.x);
+  gl_FragColor = mix(b, a, edge);
+}`,
+});
+
+unfurl({ photos, effect: "wipe", onError: (e) =&gt; console.warn(e.message) });</code></pre>
+      </figure>
     </div>
   </section>
 
-  <section aria-labelledby="h-a11y">
-    <h2 id="h-a11y">Built in</h2>
-    <ul class="plain">
+  <section aria-labelledby="h-built">
+    <div class="head"><h2 id="h-built">Built in</h2></div>
+    <ul class="plain prose">
       <li>Native scroll snap: the swipe is 1:1 with the finger and keeps its momentum.</li>
       <li>Photos past the first load only when the slider comes near the screen.</li>
-      <li>Keyboard: arrow keys, Home and End in the slider; arrows, Tab and Escape in the lightbox.</li>
-      <li>The lightbox keeps focus inside and gives it back when it closes.</li>
-      <li>Reduced motion turns the spring and the crossfade into a short fade.</li>
-      <li>No WebGL, or a photo it cannot draw: the same lightbox shows a plain image.</li>
+      <li>Two renderers: WebGL with shader effects, or CSS with transform and opacity only.</li>
+      <li>Keyboard, a focus trap, focus given back on close, and a polite live region.</li>
+      <li>Every string can be translated, and reduced motion is followed or overridden.</li>
+      <li>A photo WebGL cannot draw, or a shader that will not compile, falls back to CSS and fires onError.</li>
+      <li>No eval and no innerHTML: it runs under a strict Content Security Policy.</li>
     </ul>
+  </section>
+
+  <section aria-labelledby="h-ai">
+    <div class="head"><h2 id="h-ai">For AI tools</h2></div>
+    <p class="lead prose">Point your assistant at <a href="llms.txt">llms.txt</a> or <a href="llms-full.txt">llms-full.txt</a>. The repository also has <a href="https://github.com/JABClari/frankaa/blob/main/AGENTS.md">AGENTS.md</a>, a Claude Code skill and Cursor rules.</p>
   </section>
 
   <footer>
     <div class="credit">
-      <svg width="24" height="24" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
+      <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>
       Sirius Arc, built by Joshua. MIT licence.
     </div>
     <details>
@@ -166,84 +340,204 @@ function Card({ photos }) {
 </main>
 
 <script type="module">
-import { procession, unfurl, supported } from "./lib/index.js";
+import { procession, unfurl, registerEffect, checkEffect, supported } from "./lib/index.js";
 
+// ---------- Photos ----------
 const P = {
   h01: ["Resort Leisure", "Matt Moloney", "https://stocksnap.io/photo/resort-leisure-9IRWVX4JZL"],
-  h03: ["Exotic Maldives pool resort", "unknown", "https://www.rawpixel.com/image/6040802/photo-image-public-domain-blue-ocean"],
+  h03: ["Exotic Maldives pool resort", "", "https://www.rawpixel.com/image/6040802/photo-image-public-domain-blue-ocean"],
   h04: ["Seaside resort pool at evening", "Gustavo Galati", "https://wordpress.org/photos/photo/34682723ad/"],
-  h10: ["Mauritius beach side resort pool", "unknown", "https://www.rawpixel.com/image/6034601/photo-image-public-domain-tree-nature"],
-  h11: ["Hotel terrace sea", "unknown", "https://www.rawpixel.com/image/6042263/photo-image-public-domain-nature-tropical"],
+  h10: ["Mauritius beach side resort pool", "", "https://www.rawpixel.com/image/6034601/photo-image-public-domain-tree-nature"],
+  h11: ["Hotel terrace sea", "", "https://www.rawpixel.com/image/6042263/photo-image-public-domain-nature-tropical"],
   h16: ["Modern Room", "World Travel Adventures", "https://stocksnap.io/photo/modern-room-ORRHZ1VULX"],
-  h17: ["Bedroom", "unknown", "https://www.rawpixel.com/image/5908337/photo-image-public-domain-minimal-room"],
-  h18: ["Luxury bathroom interior", "unknown", "https://www.rawpixel.com/image/6043330/photo-image-public-domain-living-room"],
-  h21: ["Luxury resort outdoor spa", "unknown", "https://www.rawpixel.com/image/6017670/photo-image-public-domain-beach-room"],
-  h23: ["Luxury resort lobby", "unknown", "https://www.rawpixel.com/image/6042791/photo-image-public-domain-wood-house"],
+  h17: ["Bedroom", "", "https://www.rawpixel.com/image/5908337/photo-image-public-domain-minimal-room"],
+  h18: ["Luxury bathroom interior", "", "https://www.rawpixel.com/image/6043330/photo-image-public-domain-living-room"],
+  h21: ["Luxury resort outdoor spa", "", "https://www.rawpixel.com/image/6017670/photo-image-public-domain-beach-room"],
+  h23: ["Luxury resort lobby", "", "https://www.rawpixel.com/image/6042791/photo-image-public-domain-wood-house"],
   h30: ["Furniture Patio", "World Travel Adventures", "https://stocksnap.io/photo/furniture-patio-KOIAWLY3SU"],
-  h38: ["Tropical pool vacation", "unknown", "https://www.rawpixel.com/image/6033371/photo-image-public-domain-tropical-free"],
+  h38: ["Tropical pool vacation", "", "https://www.rawpixel.com/image/6033371/photo-image-public-domain-tropical-free"],
 };
-const full = (id) => ({ src: `photos/${id}.jpg`, alt: P[id][0], caption: `${P[id][0]}. Photo: ${P[id][1] === "unknown" ? "CC0" : P[id][1] + ", CC0"}` });
-const card = (id) => ({ src: `photos/${id}-800.jpg`, srcset: `photos/${id}-800.jpg 800w, photos/${id}.jpg 1600w`, sizes: "(max-width: 720px) 100vw, (max-width: 960px) 50vw, 360px", alt: P[id][0], width: 800, height: 600 });
+const full = (id) => ({ src: `photos/${id}.jpg`, alt: P[id][0], caption: `${P[id][0]}. Photo: ${P[id][1] ? P[id][1] + ", " : ""}CC0` });
+const small = (id) => ({ src: `photos/${id}-800.jpg`, srcset: `photos/${id}-800.jpg 800w, photos/${id}.jpg 1600w`, sizes: "(max-width: 720px) 100vw, (max-width: 960px) 50vw, 340px", alt: P[id][0], width: 800, height: 600 });
 
-const noGl = document.getElementById("no-gl");
-const modeTag = document.getElementById("mode");
-const useGl = () => !noGl.checked && supported();
-const showMode = () => { modeTag.textContent = useGl() ? "WebGL" : "a plain image"; };
-noGl.addEventListener("change", showMode);
-if (!supported()) { noGl.checked = true; noGl.disabled = true; }
-showMode();
+// ---------- Custom shaders: cloth unfurl and mosaic ----------
+const CLOTH = `precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform float uProgress;
+uniform float uTime;
+uniform float uDirection;
+uniform vec2 uResolution;
+uniform vec2 uFromSize;
+uniform vec2 uToSize;
+uniform float uWave;
 
-// procession: three cards, each a slider that opens the lightbox from its photo.
-const cards = [
-  ["Sea terrace", "Four photos", ["h11", "h04", "h16", "h18"]],
-  ["Pool house", "Four photos", ["h03", "h10", "h17", "h21"]],
-  ["Garden lobby", "Four photos", ["h23", "h30", "h38", "h01"]],
+// Cloth unfurl: the new photo is carried in like an Asafo flag,
+// its fly edge waving and cut in a zig-zag hem, folds shading it.
+void main() {
+  float p = uProgress;
+  float x = uDirection > 0.0 ? vUv.x : 1.0 - vUv.x;
+  float hem = abs(fract(vUv.y * 9.0) - 0.5) * 0.05;
+  float wave = sin(vUv.y * 10.0 + uTime * 6.0) * uWave * sin(p * 3.14159);
+  float edge = p * 1.25 - 0.12 + wave - hem;
+  float cloth = step(x, edge);
+  float near = clamp(1.0 - (edge - x) * 5.0, 0.0, 1.0) * cloth;
+  vec2 uv = vUv + vec2(0.0, sin(x * 16.0 - uTime * 5.0) * 0.014 * near);
+  float fold = 1.0 - 0.32 * near * (0.5 + 0.5 * sin(x * 38.0 - uTime * 4.0));
+  vec4 a = texture2D(uFrom, mirrorUv(coverUv(vUv, uFromSize, uResolution)));
+  vec4 b = texture2D(uTo, mirrorUv(coverUv(uv, uToSize, uResolution)));
+  gl_FragColor = mix(a, vec4(b.rgb * fold, 1.0), cloth);
+}`;
+
+const MOSAIC = `precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform float uProgress;
+uniform vec2 uResolution;
+uniform vec2 uFromSize;
+uniform vec2 uToSize;
+uniform float uTiles;
+
+// Mosaic: tiles turn over one by one, each blurred to its own colour
+// while it turns, like pieces of cloth sewn onto the field.
+float hash(vec2 q) { return fract(sin(dot(q, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec2 grid = vec2(uTiles * uResolution.x / uResolution.y, uTiles);
+  vec2 cell = floor(vUv * grid);
+  float t = clamp((uProgress - hash(cell) * 0.55) / 0.45, 0.0, 1.0);
+  vec2 uv = mix(vUv, (cell + 0.5) / grid, sin(t * 3.14159));
+  vec4 a = texture2D(uFrom, mirrorUv(coverUv(uv, uFromSize, uResolution)));
+  vec4 b = texture2D(uTo, mirrorUv(coverUv(uv, uToSize, uResolution)));
+  gl_FragColor = mix(a, b, step(0.5, t));
+}`;
+
+registerEffect("cloth", { fragment: CLOTH, uniforms: { uWave: 0.05 }, duration: 950, easing: "linear", css: "slide" });
+registerEffect("mosaic", { fragment: MOSAIC, uniforms: { uTiles: 9 }, duration: 900, easing: "linear", css: "fade" });
+
+// ---------- Settings (the playground drives every demo) ----------
+const S = { effect: "displacement", renderer: "auto", motion: "system", loop: false, autoplay: false };
+const $ = (s) => document.querySelector(s);
+const lightbox = (photos, start, origin, extra = {}) => unfurl({
+  photos, start, origin,
+  effect: S.effect === "yours" ? "yours" : S.effect,
+  renderer: S.renderer,
+  reducedMotion: S.motion,
+  ...extra,
+});
+
+// ---------- Event log: listens for the DOM events, so it shows those work too ----------
+const log = $("#pg-log");
+const t0 = performance.now();
+const names = ["open-start", "open-end", "close-start", "close-end", "change", "slide-change", "animation-start", "animation-end", "error"];
+const brief = (d) => Object.entries(d || {}).map(([k, v]) => `${k}: ${typeof v === "string" && v.length > 60 ? v.slice(0, 60).replace(/\s+/g, " ") + "..." : v}`).join(", ");
+for (const n of names) document.addEventListener("frankaa:" + n, (e) => {
+  log.querySelector(".empty")?.remove();
+  const li = document.createElement("li");
+  const fromSlider = !!e.target.closest?.(".fk-procession");
+  li.className = fromSlider ? "src-slider" : "";
+  for (const [cls, text] of [["tm", ((performance.now() - t0) / 1000).toFixed(2) + "s"], ["ev", n], ["dt", brief(e.detail)]]) {
+    const s = document.createElement("span"); s.className = cls; s.textContent = text; li.append(s);
+  }
+  log.prepend(li);
+  while (log.children.length > 7) log.lastChild.remove();
+});
+$("#pg-clear").addEventListener("click", () => { log.replaceChildren(); const li = document.createElement("li"); li.className = "empty"; const s = document.createElement("span"); s.textContent = "Cleared."; li.append(s); log.append(li); });
+
+// ---------- Sliders ----------
+const sliders = [];
+const cardDefs = [
+  ["#cards", "Sea terrace", "Four photos", ["h11", "h04", "h16", "h18"]],
+  ["#cards", "Pool house", "Four photos", ["h03", "h10", "h17", "h21"]],
+  ["#cards", "Garden lobby", "Four photos", ["h23", "h30", "h38", "h01"]],
 ];
-const wrap = document.getElementById("cards");
-cards.forEach(([title, sub, ids], k) => {
+const mountCard = ([where, title, sub, ids], k) => {
   const art = document.createElement("article");
   art.className = "card";
   const box = document.createElement("div");
-  art.append(box);
-  art.insertAdjacentHTML("beforeend", `<p class="t">${title}</p><p class="s">${sub}</p>`);
-  wrap.append(art);
-  const slider = procession(box, {
-    photos: ids.map(card),
-    label: title,
-    priority: k === 0,
-    onSelect: (i) => unfurl({
-      photos: ids.map(full),
-      start: i,
-      label: title,
-      radius: 12,
-      webgl: useGl(),
-      origin: (n) => slider.image(n),
-      onChange: (n) => slider.go(n, false),
-    }),
+  const t = document.createElement("p"); t.className = "t"; t.textContent = title;
+  const s = document.createElement("p"); s.className = "s"; s.textContent = sub;
+  art.append(box, t, s);
+  $(where).append(art);
+  const make = () => {
+    const slider = procession(box, {
+      photos: ids.map(small), label: title, priority: k === 0,
+      loop: S.loop, autoplay: S.autoplay ? 3000 : false, reducedMotion: S.motion,
+      onSelect: (i) => lightbox(ids.map(full), i, (n) => slider.image(n), { label: title, radius: 12, onChange: (n) => slider.go(n, false) }),
+    });
+    return slider;
+  };
+  sliders.push({ make, inst: make() });
+};
+cardDefs.forEach(mountCard);
+const remakeSliders = () => sliders.forEach((s) => { s.inst.destroy(); s.inst = s.make(); });
+
+// ---------- Gallery grids ----------
+const grid = (where, ids, radius) => {
+  const host = $(where);
+  const tiles = ids.map((id, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tile";
+    b.setAttribute("aria-label", `Open photo ${i + 1}: ${P[id][0]}`);
+    const img = document.createElement("img");
+    Object.assign(img, { src: `photos/${id}-800.jpg`, alt: "", loading: "lazy", decoding: "async", width: 800, height: 600 });
+    b.append(img);
+    b.addEventListener("click", () => lightbox(ids.map(full), i, (n) => tiles[n].querySelector("img"), { label: "Gallery", radius }));
+    host.append(b);
+    return b;
   });
+  return tiles;
+};
+grid("#gallery", ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", "h17"], 16);
+const tryTiles = grid("#try", ["h11", "h03", "h23", "h18"], 12);
+
+// ---------- Controls ----------
+const effectSel = $("#pg-effect"), editor = $("#editor"), src = $("#pg-src"), status = $("#pg-status");
+src.value = CLOTH;
+effectSel.addEventListener("change", () => {
+  S.effect = effectSel.value;
+  if (S.effect === "yours") { editor.open = true; compile(false); }
+});
+for (const r of document.querySelectorAll('input[name="renderer"]')) r.addEventListener("change", () => { S.renderer = r.value; });
+for (const r of document.querySelectorAll('input[name="motion"]')) r.addEventListener("change", () => { S.motion = r.value; remakeSliders(); });
+$("#pg-loop").addEventListener("change", (e) => { S.loop = e.target.checked; remakeSliders(); });
+$("#pg-auto").addEventListener("change", (e) => { S.autoplay = e.target.checked; remakeSliders(); });
+if (!supported()) { const w = document.querySelector('input[name="renderer"][value="webgl"]'); w.disabled = true; w.parentElement.title = "No WebGL in this browser"; }
+
+// The live editor: compile up front, show the error, else register it as "yours" and open a photo.
+const compile = (andTry) => {
+  const message = checkEffect(src.value);
+  if (message) { status.className = "status bad"; status.textContent = message; return; }
+  registerEffect("yours", { fragment: src.value, uniforms: { uWave: 0.05, uTiles: 9 }, duration: 950, easing: "linear" });
+  S.effect = "yours"; effectSel.value = "yours";
+  status.className = "status good";
+  status.textContent = supported() ? "Compiled." : "No WebGL here, so it will show with CSS.";
+  if (andTry) tryTiles[1].click();
+};
+$("#pg-compile").addEventListener("click", () => compile(true));
+$("#pg-reset").addEventListener("click", () => { src.value = CLOTH; status.textContent = ""; status.className = "status"; });
+src.addEventListener("keydown", (e) => {
+  if (e.key === "Tab" && !e.shiftKey && !e.metaKey) { e.preventDefault(); src.setRangeText("  ", src.selectionStart, src.selectionEnd, "end"); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); compile(true); }
 });
 
-// unfurl: a grid of photos.
-const ids = ["h04", "h01", "h10", "h16", "h21", "h23", "h30", "h38", "h17"];
-const gallery = document.getElementById("gallery");
-const thumbs = ids.map((id, i) => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.setAttribute("aria-label", `Open photo ${i + 1}: ${P[id][0]}`);
-  b.innerHTML = `<img src="photos/${id}-800.jpg" alt="" loading="lazy" decoding="async" width="800" height="600">`;
-  b.addEventListener("click", () => unfurl({
-    photos: ids.map(full),
-    start: i,
-    label: "Gallery",
-    webgl: useGl(),
-    origin: (n) => thumbs[n].querySelector("img"),
-  }));
-  gallery.append(b);
-  return b;
+// ---------- Copy buttons ----------
+for (const b of document.querySelectorAll(".copy")) b.addEventListener("click", async () => {
+  const text = b.dataset.copy ?? b.closest("figure").querySelector("code").textContent;
+  try { await navigator.clipboard.writeText(text); } catch { return; }
+  b.classList.add("done");
+  setTimeout(() => b.classList.remove("done"), 1400);
 });
 
-// Credits.
-document.getElementById("credits").innerHTML = Object.entries(P).map(([id, [t, by, url]]) => `<li><a href="${url}">${t}</a>${by === "unknown" ? "" : `, ${by}`}, CC0 1.0</li>`).join("");
+// ---------- Credits ----------
+const ol = $("#credits");
+for (const [id, [t, by, url]] of Object.entries(P)) {
+  const li = document.createElement("li");
+  const a = document.createElement("a"); a.href = url; a.textContent = t;
+  li.append(a, `${by ? ", " + by : ""}, CC0 1.0`);
+  ol.append(li);
+}
 </script>
 </body>
 </html>

@@ -52,3 +52,52 @@ export function swipeIntent(dx: number, dy: number, ms: number): Swipe {
 export function onScreen(r: { left: number; top: number; width: number; height: number }, vw: number, vh: number): boolean {
   return r.width > 4 && r.height > 4 && r.left + r.width > 0 && r.top + r.height > 0 && r.left < vw && r.top < vh;
 }
+
+/** Spring all four sides of a box toward a target, in sub-steps of at most 1/120 s. Returns true while moving. */
+export function stepBox(box: Box, vel: number[], target: Box, dt: number, cfg: SpringCfg): boolean {
+  const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+  let moving = false;
+  (["x", "y", "w", "h"] as const).forEach((k, j) => {
+    let x = box[k], v = vel[j];
+    for (let s = 0; s < steps; s++) [x, v] = springStep(x, v, target[k], h, cfg);
+    box[k] = x; vel[j] = v;
+    if (!settled(x, v, target[k])) moving = true;
+  });
+  return moving;
+}
+
+/** The corner radius on the way: it follows how far the box still has to go (open: spot radius to open radius). */
+export function radiusAt(closing: boolean, box: Box, target: Box, rSpot: number, rOpen: number): number {
+  const left = Math.min(1, Math.abs(box.w - target.w) / Math.max(1, target.w));
+  return closing ? rOpen + (rSpot - rOpen) * (1 - left) : rOpen + (rSpot - rOpen) * left;
+}
+
+/**
+ * The CSS renderer's FLIP frame: a layer laid out at `rest` drawn as `box`. The layer moves and scales (origin top
+ * left) and its photo scales back (origin centre) so it stays undistorted and covers the box.
+ */
+export function flipFrame(box: Box, rest: Box): { tx: number; ty: number; sx: number; sy: number; ix: number; iy: number } {
+  const sx = box.w / Math.max(1, rest.w), sy = box.h / Math.max(1, rest.h);
+  const c = Math.max(sx, sy);
+  return { tx: box.x - rest.x, ty: box.y - rest.y, sx, sy, ix: c / sx, iy: c / sy };
+}
+
+export type RendererPref = "webgl" | "css" | "auto";
+/** Which renderer to use: css when asked or when WebGL is missing, else WebGL. */
+export function pickRenderer(pref: RendererPref | undefined, webgl: boolean): "webgl" | "css" {
+  return pref === "css" || !webgl ? "css" : "webgl";
+}
+
+/** What both renderers share with the lightbox. */
+export type StageCtx = { still: boolean; rSpot: number; rOpen: number; duration: number; area: () => Box };
+export type Stage = {
+  kind: "webgl" | "css";
+  /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
+  open(i: number, from: Box | null, started?: () => void): Promise<boolean>;
+  /** Move to photo i. Resolves false when it cannot be shown. */
+  show(i: number, dir: 1 | -1): Promise<boolean>;
+  /** Spring back to `to` (or fade out). */
+  close(to: Box | null): Promise<void>;
+  resize(): void;
+  destroy(): void;
+};
