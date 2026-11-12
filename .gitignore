@@ -2,3 +2,6 @@ node_modules
 dist
 .DS_Store
 mockups/strip/notes/reference-*
+
+# Internal launch material (posts, image sources, film exports): kept local, never published
+brand/launch/
