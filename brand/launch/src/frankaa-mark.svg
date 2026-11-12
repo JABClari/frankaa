@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="frankaa">
-  <title>frankaa</title>
-  <path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/>
-  <rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/>
-  <circle cx="26" cy="25" r="4.5" fill="#E9B23A"/>
-  <path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/>
-</svg>
