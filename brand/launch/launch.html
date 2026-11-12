@@ -72,8 +72,9 @@ const L = {
       `<div class="code" style="left:50%;top:380px;transform:translateX(-50%);font-size:24px">${CODE}</div>` }),
   thumb: () => ({ W: 240, H: 240, html: `<div class="thumb-mark" style="position:absolute;left:36px;top:30px;width:168px;height:168px">${MARK}</div>` }),
 };
-// Only the layouts listed above can be drawn; any other ?id= falls back to the og image.
-const o = (Object.hasOwn(L, id) && typeof L[id] === 'function' ? L[id] : L.og)();
+// Only the layouts listed above can be drawn (a Map, not a property lookup); any other ?id= draws the og image.
+const LAYOUTS = new Map(Object.entries(L));
+const o = (LAYOUTS.get(id) ?? LAYOUTS.get('og'))();
 const root = document.getElementById('root');
 root.className = 'c'; root.style.width = o.W + 'px'; root.style.height = o.H + 'px'; root.innerHTML = o.html;
 window.READY = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.decode().catch(() => {}))]).then(() => ({ W: o.W, H: o.H }));
