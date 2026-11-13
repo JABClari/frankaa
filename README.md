@@ -457,7 +457,7 @@ Releases publish from GitHub Actions with npm trusted publishing (OIDC) and prov
 
 ## Credits
 
-Made by Sirius Arc, built by Joshua. The slider comes from B-Immo's listing cards and the lightbox from Piku's listing pages.
+Made by Sirius Arc, built by Joshua.
 
 Photos on the docs page are CC0; sources are listed in `docs/photos/CREDITS.txt`.
 
