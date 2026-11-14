@@ -32,7 +32,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 - **SSR.** frankaa touches the DOM only in effects and event handlers. In Next.js App Router, Remix or similar, put the component in a client component (`"use client"`). Never call `procession()` or `unfurl()` at module top level or during render.
 - **Origin.** Pass `origin` so the photo springs from and back to its thumbnail, and set `radius` to the thumbnail's border radius. From a slider, use `origin: (n) => slider.image(n)` and `onChange: (n) => slider.go(n, false)`.
 - **Effects.** Default `"displacement"`. Use `"fade"` for a quiet product, `"none"` for instant. Custom shaders: register with `registerEffect` and check with `checkEffect`; never compile shader source from users.
-- **Videos.** Use `{ type: "video", provider, src, poster }` items; give the poster the video's shape. Add the providers to the site's CSP `frame-src`. Never build embed URLs yourself; pass the link and frankaa validates it.
+- **Videos.** Use `{ type: "video", provider, src, poster }` items; give the poster the video's shape. Add the providers to the site's CSP `frame-src`. Never build embed URLs yourself; pass the link and frankaa validates it. mp4 slides come with frankaa's own controls (play, pause, seek, volume, full screen; a tap pauses rather than closes), so do not add native controls or a custom player.
 - **Extra buttons** go in `topActions` (or `controls`, or React `renderControls` plus `{lightbox.portal}`), never by querying the dialog's DOM.
 - **Cleanup.** `destroy()` fires `onCloseStart`/`onCloseEnd` with `reason: "destroy"`, so reset app state in `onCloseEnd`.
 - **Autoplay** stays off unless the person asks for it.
