@@ -10,6 +10,7 @@ import { getEffect, registerEffect, effectNames, type Effect, type EffectName, t
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
 import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
 import { embedUrl, type MediaProvider } from "./media";
+import { videoPlayer, type VideoLabels, type VideoPlayer } from "./video";
 import type { Drumline, DrumlineOptions } from "./drumline";
 import { drumlineLook, stripOptions, type DrumlinePreset } from "./drumline-math";
 import { readArgs, fullSrc, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
@@ -48,8 +49,8 @@ export type UnfurlLabels = {
   play: string;
   /** The visible counter. {n}, {total}. Default "{n} / {total}". */
   counter: string;
-};
-export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}" };
+} & Omit<VideoLabels, "play">;
+export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}", pause: "Pause video", mute: "Mute", unmute: "Unmute", seek: "Seek", volume: "Volume", fullscreen: "Full screen", exitFullscreen: "Exit full screen", timeOf: "{time} of {duration}" };
 
 /** cors: a cross-origin photo without CORS headers; load: the photo did not load; webgl: no WebGL (only when
  *  renderer is "webgl"); shader: the effect did not compile (message has the log). */
@@ -314,9 +315,13 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
 
   // ---------- Video slides: a play button over the poster, the player only after a tap ----------
   let mediaFor = -1;
+  // The mp4 player while one is open (frankaa's own controls; other providers bring their own).
+  let player: VideoPlayer | null = null;
   const hideMedia = () => {
     if (mediaFor === -1 && media.hidden) return;
     mediaFor = -1;
+    player?.destroy();
+    player = null;
     // Removing the player stops it.
     media.replaceChildren();
     media.hidden = true;
@@ -348,16 +353,26 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       emit("onError", { index, src: p.src, reason: "media", fallback: "none", message: `not a usable ${p.provider} source` } satisfies UnfurlError);
       return;
     }
-    let player: HTMLElement;
+    let node: HTMLElement;
     if (p.provider === "mp4") {
-      const v = el("video", "fk-unfurl-player", { controls: "", playsinline: "", preload: "auto", ...(p.poster ? { poster: p.poster } : {}) });
-      v.src = url;
-      v.autoplay = true;
-      v.addEventListener("error", () => emit("onError", { index, src: p.src, reason: "media", fallback: "none", message: "the video did not load" } satisfies UnfurlError), { once: true });
-      player = v;
+      const at = index;
+      let failed = false;
+      player?.destroy();
+      player = videoPlayer(url, {
+        poster: p.poster,
+        title: p.title || p.alt || L.play,
+        labels: L,
+        reduced: () => still,
+        onError: () => {
+          if (failed) return;
+          failed = true;
+          emit("onError", { index: at, src: p.src, reason: "media", fallback: "none", message: "the video did not load" } satisfies UnfurlError);
+        },
+      });
+      node = player.el;
     } else {
       // Sandboxed, no referrer path, and only the abilities a player needs.
-      player = el("iframe", "fk-unfurl-player", {
+      node = el("iframe", "fk-unfurl-player", {
         src: url,
         title: p.title || p.alt || L.play,
         allow: "autoplay; encrypted-media; picture-in-picture; fullscreen",
@@ -366,8 +381,8 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
         sandbox: "allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox",
       });
     }
-    media.replaceChildren(player);
-    player.focus({ preventScroll: true });
+    media.replaceChildren(node);
+    node.focus({ preventScroll: true });
   };
 
   // ---------- Your controls: actions and a host for anything else, before Close ----------
@@ -500,8 +515,12 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const ring = (b: HTMLElement) => { if (b.offsetParent !== null && root.contains(document.activeElement)) b.focus({ preventScroll: true }); };
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
-    // A playing <video> keeps its own arrow keys (seek); Escape still closes.
-    if (e.key !== "Escape" && e.key !== "Tab" && (e.target as Element)?.closest?.("video")) return;
+    // With focus in the mp4 player, its keys win (Space, K, arrows seek, J, L, M, F); Escape and Tab still go to the
+    // lightbox, and the seek and volume sliders keep their own arrows.
+    if (player && e.key !== "Escape" && e.key !== "Tab" && player.el.contains(e.target as Node)) {
+      if (player.key(e)) { e.preventDefault(); return; }
+      if ((e.target as Element).classList?.contains("fk-vc-range")) return;
+    }
     const act = lightboxKey(e.key);
     if (act) {
       e.preventDefault();
@@ -516,7 +535,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       const r = stage?.current();
       if (r) zoomAt(r.x + r.w / 2, r.y + r.h / 2, e.key === "-" ? 1 / 1.5 : 1.5);
     } else if (e.key === "Tab" && trap) {
-      const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href], iframe, video[controls], [tabindex]:not([tabindex='-1'])")).filter((b) => !b.hidden && b.offsetParent !== null);
+      const f = Array.from(root.querySelectorAll<HTMLElement>("button, a[href], input, iframe, video[controls], [tabindex]:not([tabindex='-1'])")).filter((b) => !b.hidden && b.offsetParent !== null);
       e.preventDefault();
       if (!f.length) return;
       const i = f.indexOf(document.activeElement as HTMLElement);
@@ -596,7 +615,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     else if (d.axis === "y") stage?.release({ vx: 0, vy: 0 });
   };
   root.addEventListener("pointerdown", (e) => {
-    if ((e.target as Element).closest("button, a, .fk-drumline") || phase === "closing" || phase === "closed") return;
+    if ((e.target as Element).closest("button, a, input, .fk-drumline, .fk-vc-bar") || phase === "closing" || phase === "closed") return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { root.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     if (pointers.size === 2 && canZoom()) {
@@ -671,6 +690,11 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   let tap: { t: number; x: number; y: number; timer: number } | null = null;
   const cancelTap = () => { if (tap) { clearTimeout(tap.timer); tap = null; } };
   const onTap = (x: number, y: number, t: number) => {
+    // A tap on a playing (or paused) mp4 plays or pauses it instead of closing.
+    if (player) {
+      const r = player.el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { player.toggle(); return; }
+    }
     if (!canZoom()) { close(); return; }
     if (tap && t - tap.t < 300 && Math.hypot(x - tap.x, y - tap.y) < 40) { cancelTap(); toggleZoom(x, y); return; }
     cancelTap();

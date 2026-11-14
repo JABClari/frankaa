@@ -234,9 +234,10 @@ unfurl({
 | `vimeo` | `player.vimeo.com` with `dnt=1` | a vimeo.com link (unlisted `?h=` kept) or the id |
 | `tiktok` | the official embed | a video link or the id |
 | `instagram` | the official embed | a post or reel link, or the code |
-| `mp4` | `<video controls playsinline>` | an http(s) or relative file address |
+| `mp4` | `<video playsinline>` with frankaa's own controls | an http(s) or relative file address |
 
 - Give the poster the video's shape: the player takes the poster's box. The poster is optional: an mp4 without one shows its first frame behind the play button, and a neutral 16:9 still stands in elsewhere.
+- mp4 controls: play and pause, a seek bar with the time and length, mute with a volume slider (on hover; phones keep the mute button, since they set volume with their own buttons), and full screen. A tap on the video plays or pauses it instead of closing the lightbox. The bar fades out after 2.5 seconds of untouched playback and comes back on any movement or focus. With focus in the player: Space or K plays and pauses, Left and Right seek 5 seconds, J and L seek 10, M mutes, F goes full screen; Escape still closes. Volume and mute carry over to the next video in the same visit. Style it with `--fk-vc-ink`, `--fk-vc-fill`, `--fk-vc-track`, `--fk-vc-buffer` and `--fk-vc-btn`.
 - Moving to or from a video uses a short crossfade; the effect runs between image slides.
 - Players are sandboxed iframes, and only ids that match each provider's shape are used. A source that does not fit fires `onError` with `reason: "media"`.
 - CSP: add the providers you use to `frame-src` (for example `https://www.youtube-nocookie.com https://player.vimeo.com`), and your mp4 host to `media-src`.
@@ -286,6 +287,11 @@ Every string can be replaced. `{n}` and `{total}` are filled in.
 | `counter` | `{n} / {total}` | `pause`, `play` | `Pause slideshow`, `Play slideshow` |
 | `videoPosition` | `Video {n} of {total}` | | |
 | `play` | `Play video` | | |
+| `pause` | `Pause video` | | |
+| `mute`, `unmute` | `Mute`, `Unmute` | | |
+| `seek`, `volume` | `Seek`, `Volume` | | |
+| `fullscreen`, `exitFullscreen` | `Full screen`, `Exit full screen` | | |
+| `timeOf` | `{time} of {duration}` | | |
 
 ```js
 unfurl({ photos, labels: { dialog: "Fotos", close: "Cerrar", next: "Siguiente", previous: "Anterior", position: "Foto {n} de {total}" } });

@@ -105,7 +105,7 @@ effect        "displacement" | "ripple" | "fade" | "zoom" | "none" | registered 
 renderer      "auto" | "webgl" | "css"   default "auto" (WebGL when available, else CSS)
 reducedMotion "system" | "always" | "never"   default "system"; reduced = short fade, no spring, no effect
 label         string               shorthand for labels.dialog
-labels        Partial<UnfurlLabels>   dialog, close, next, previous, position ("Photo {n} of {total}"), counter ("{n} / {total}")
+labels        Partial<UnfurlLabels>   dialog, close, next, previous, position ("Photo {n} of {total}"), counter ("{n} / {total}"), videoPosition, play, pause, mute, unmute, seek, volume, fullscreen, exitFullscreen, timeOf ("{time} of {duration}")
 focusTrap     boolean              default true (also sets aria-modal)
 returnFocus   boolean | HTMLElement   default true: focus returns to the element focused before opening
 announce      boolean              default true
@@ -354,6 +354,10 @@ unfurl({
   origin: (n) => thumbs[n], // the poster springs from the grid
 });
 // Players load only on tap: youtube-nocookie, Vimeo dnt=1, official TikTok and Instagram embeds, <video> for mp4.
+// mp4 gets frankaa's own controls: play/pause, seek bar with time, mute + volume (hover), full screen. A tap on the
+// video plays or pauses (it does not close). Keys with focus in the player: Space/K toggle, Left/Right 5 s, J/L 10 s,
+// M mute, F full screen; Escape closes. The bar hides after 2.5 s of untouched playback. Theme: --fk-vc-ink,
+// --fk-vc-fill, --fk-vc-track, --fk-vc-buffer, --fk-vc-btn. Do not add your own <video controls> on top.
 // They are removed (stopped) when moving on or closing. Changes to or from a video use a short crossfade.
 // CSP: frame-src for the providers used, media-src for mp4 hosts. Bad sources fire onError reason "media".
 

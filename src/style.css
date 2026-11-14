@@ -115,6 +115,46 @@
 .fk-unfurl-play svg path { fill: currentColor; }
 .fk-unfurl-play:active { transform: scale(var(--fk-press-scale)); }
 .fk-unfurl-play:focus-visible { outline: var(--fk-focus-width) solid var(--fk-focus-dark); outline-offset: 3px; }
+
+/* The mp4 player: frankaa's own controls. A tap on the video plays or pauses; the bar rests over a soft scrim and
+   fades away while the video plays untouched. Size and colour through --fk-vc-* properties. */
+.fk-vc { --fk-vc-ink: #fff; --fk-vc-track: rgba(255, 255, 255, .28); --fk-vc-buffer: rgba(255, 255, 255, .45); --fk-vc-fill: #fff; --fk-vc-btn: 36px; position: relative; width: 100%; height: 100%; background: #000; outline: none; color: var(--fk-vc-ink); }
+.fk-vc .fk-unfurl-player { position: absolute; inset: 0; object-fit: contain; }
+.fk-vc:focus-visible { box-shadow: inset 0 0 0 var(--fk-focus-width) var(--fk-focus-dark); }
+.fk-vc[data-idle=true] { cursor: none; }
+.fk-vc-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 6px; padding: 28px 10px 8px; background: linear-gradient(transparent, rgba(0, 0, 0, .55)); transition: opacity .2s var(--fk-ease), transform .2s var(--fk-ease); font: 500 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
+.fk-vc[data-idle=true] .fk-vc-bar { opacity: 0; transform: translateY(4px); pointer-events: none; }
+.fk-vc-btn { box-sizing: border-box; flex: none; width: var(--fk-vc-btn); height: var(--fk-vc-btn); margin: 0; padding: 0; border: 0; border-radius: 999px; display: grid; place-items: center; background: none; color: inherit; cursor: pointer; -webkit-appearance: none; appearance: none; transition: transform .16s var(--fk-ease), background-color .16s var(--fk-ease); }
+.fk-vc-btn svg { display: block; flex: none; }
+.fk-vc-btn:active { transform: scale(var(--fk-press-scale)); }
+.fk-vc-btn:focus-visible { outline: var(--fk-focus-width) solid var(--fk-focus-dark); outline-offset: 1px; }
+.fk-vc-btn[hidden] { display: none; }
+@media (hover: hover) and (pointer: fine) { .fk-vc-btn:hover { background: rgba(255, 255, 255, .14); } }
+.fk-vc svg.fk-vc-fill path { fill: currentColor; }
+.fk-vc-time { flex: none; min-width: 4ch; text-align: center; opacity: .9; }
+.fk-vc-volume { display: flex; align-items: center; flex: none; }
+/* Sliders: a 4px track that grows to 6px under the pointer, the played share filled, the buffered share lighter. */
+.fk-vc-range { --fk-vc-p: 0; --fk-vc-b: 0; flex: 1; min-width: 0; height: 24px; margin: 0; padding: 0; background: none; cursor: pointer; -webkit-appearance: none; appearance: none; touch-action: none; }
+.fk-vc-range:focus { outline: none; }
+.fk-vc-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--fk-vc-fill) calc(var(--fk-vc-p) * 100%), var(--fk-vc-buffer) calc(var(--fk-vc-p) * 100%), var(--fk-vc-buffer) calc(var(--fk-vc-b) * 100%), var(--fk-vc-track) calc(var(--fk-vc-b) * 100%)); transition: height .16s var(--fk-ease); }
+.fk-vc-range::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--fk-vc-fill) calc(var(--fk-vc-p) * 100%), var(--fk-vc-buffer) calc(var(--fk-vc-p) * 100%), var(--fk-vc-buffer) calc(var(--fk-vc-b) * 100%), var(--fk-vc-track) calc(var(--fk-vc-b) * 100%)); }
+.fk-vc-range::-webkit-slider-thumb { width: 12px; height: 12px; margin-top: -4px; border: 0; border-radius: 999px; background: var(--fk-vc-fill); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); -webkit-appearance: none; appearance: none; transform: scale(.7); transition: transform .16s var(--fk-ease); }
+.fk-vc-range::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 999px; background: var(--fk-vc-fill); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transform: scale(.7); transition: transform .16s var(--fk-ease); }
+.fk-vc-range:hover::-webkit-slider-thumb, .fk-vc-range:active::-webkit-slider-thumb, .fk-vc-range:focus-visible::-webkit-slider-thumb { transform: scale(1); }
+.fk-vc-range:hover::-moz-range-thumb, .fk-vc-range:active::-moz-range-thumb, .fk-vc-range:focus-visible::-moz-range-thumb { transform: scale(1); }
+.fk-vc-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--fk-focus-dark); }
+.fk-vc-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--fk-focus-dark); }
+.fk-vc-vol { flex: none; width: 0; opacity: 0; transition: width .2s var(--fk-ease), opacity .2s var(--fk-ease), margin .2s var(--fk-ease); }
+.fk-vc-volume:hover .fk-vc-vol, .fk-vc-volume:focus-within .fk-vc-vol { width: 72px; opacity: 1; margin-right: 4px; }
+/* Phones set volume with their buttons (iOS ignores it from a page), so only the mute button shows there. */
+@media (hover: none) { .fk-vc-vol { display: none; } }
+/* The centre pulse when the video plays or pauses. */
+.fk-vc-flash { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 999px; display: grid; place-items: center; background: rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; }
+.fk-vc-flash svg { display: block; }
+.fk-vc-flash.fk-vc-flash-on { animation: fk-vc-flash .5s var(--fk-ease); }
+@keyframes fk-vc-flash { 0% { opacity: 1; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.15); } }
+.fk-vc:fullscreen { border-radius: 0; }
+@media (max-width: 479px) { .fk-vc-bar { gap: 2px; padding: 24px 4px 4px; } .fk-vc-time:last-of-type { display: none; } }
 .fk-unfurl-prev, .fk-unfurl-next { position: absolute; top: 50%; margin-top: -22px; z-index: 1; }
 .fk-unfurl-prev { left: calc(16px + env(safe-area-inset-left, 0px)); }
 .fk-unfurl-next { right: calc(16px + env(safe-area-inset-right, 0px)); }
