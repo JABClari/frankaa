@@ -94,7 +94,8 @@ try {
     await wait("animation-end", 3);
     check(await page.evaluate(() => !document.querySelector(".fk-unfurl-media iframe")), `${renderer}: moving on removes the player (stops it)`);
     await page.click(".fk-unfurl-play");
-    check(await page.evaluate(() => !!document.querySelector(".fk-unfurl-media video[controls]")), `${renderer}: an mp4 plays in a <video>`);
+    check(await page.evaluate(() => !!document.querySelector(".fk-unfurl-media .fk-vc video") && !document.querySelector(".fk-unfurl-media video[controls]")), `${renderer}: an mp4 plays in a <video> with frankaa's controls`);
+    check(await page.evaluate(() => ["fk-vc-toggle", "fk-vc-seek", "fk-vc-mute", "fk-vc-vol"].every((c) => document.querySelector(`.fk-vc .${c}`))), `${renderer}: the mp4 bar has play, seek, mute and volume`);
     await page.evaluate(() => window.__u.next());
     await wait("animation-end", 4);
     await page.click(".fk-unfurl-play");
