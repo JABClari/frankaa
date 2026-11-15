@@ -196,6 +196,15 @@ pre .c { color: var(--ink-3); }
 .mini-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .combo .drumhost { width: 100%; }
 
+/* Loading demo */
+.load-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.load-grid .tile { aspect-ratio: 4 / 3; }
+.load-grid .tile:first-child { grid-column: auto; grid-row: auto; }
+.load-controls { padding: 14px 8px 4px; }
+.load-note { margin: 0; padding: 4px 8px 6px; min-height: 20px; color: var(--ink-3); font-size: 13px; }
+.load-chip { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #16130f; font: 500 13px/1 var(--sans); white-space: nowrap; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
+.load-chip:enabled { cursor: pointer; }
+
 /* Effects gallery */
 .fx .well { aspect-ratio: 4 / 3; cursor: pointer; }
 .fx .well img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .4s var(--ease), opacity .3s var(--ease); }
@@ -274,6 +283,7 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
   .hero { padding: 36px 0 18px; } .hero h1 { font-size: 38px; } .hero svg.mark { width: 46px; height: 46px; } .lede { font-size: 17px; margin-top: 16px; } .lede-2 { font-size: 14px; } .points { margin-top: 13px; } .install { margin-top: 16px; }
   .grid2, .grid3, .cards3 { grid-template-columns: minmax(0, 1fr); }
   .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .load-controls { padding: 14px 6px 4px; }
   .cards3 { padding: 12px; }
   .story { grid-template-columns: 1fr; text-align: left; }
   section.part { padding-top: 64px; }
@@ -292,7 +302,7 @@ footer ol { margin: 8px 0 0; padding-left: 18px; }
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="frankaa home"><svg width="24" height="24" viewBox="0 0 64 64" aria-hidden="true"><path d="M8 8h48v40l-8 8-8-8-8 8-8-8-8 8-8-8z" fill="#23306B"/><rect x="16" y="16" width="32" height="22" rx="3" fill="#F4EBDD"/><circle cx="26" cy="25" r="4.5" fill="#E9B23A"/><path d="M18 36l9-8 6 5 5-4 8 7z" fill="#C8322B"/></svg>frankaa</a>
-    <nav class="links" aria-label="Sections"><span class="spy" aria-hidden="true"></span><a href="#procession">Slider</a><a href="#unfurl">Lightbox</a><a href="#drumline">Drumline</a><a href="#together">Together</a><a href="#effects">Effects</a><a href="#play">Playground</a><a href="#ai">AI</a></nav>
+    <nav class="links" aria-label="Sections"><span class="spy" aria-hidden="true"></span><a href="#procession">Slider</a><a href="#unfurl">Lightbox</a><a href="#drumline">Drumline</a><a href="#together">Together</a><a href="#effects">Effects</a><a href="#loading">Loading</a><a href="#play">Playground</a><a href="#ai">AI</a></nav>
     <div class="nav-end"><a class="btn small" href="https://www.npmjs.com/package/frankaa">npm</a><a class="btn small dark gh-btn" href="https://github.com/JABClari/frankaa" aria-label="frankaa on GitHub"><svg class="gh" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a></div>
     <button class="jump" type="button" aria-expanded="false" aria-controls="jump-menu"><span class="jump-now">Sections</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <div class="jump-menu" id="jump-menu" hidden></div>
@@ -411,6 +421,53 @@ drumline(el, items, { lightbox: { effect: "ripple", strip: "minimal" } });  // a
       <div class="grid4" id="fx-grid"></div>
     </section>
 
+    <!-- ---------- loading ---------- -->
+    <section class="part" id="loading" aria-labelledby="h-loading">
+      <div class="head"><div><h2 id="h-loading"><small>loading</small>Never a frozen photo</h2><p>A slow photo never holds the lightbox up. It opens or moves at once on the thumbnail, a sheen drifts over it, and the photo opens up in place when it lands.</p></div></div>
+      <div class="card">
+        <div class="well"><div class="gallery load-grid" id="load-grid"></div></div>
+        <div class="controls load-controls">
+          <div class="field"><span id="l-net">Connection</span><div class="radios" role="radiogroup" aria-labelledby="l-net"><label><input type="radio" name="net" value="0"><span>Normal</span></label><label><input type="radio" name="net" value="2000" checked><span>Slow 2s</span></label><label><input type="radio" name="net" value="5000"><span>Very slow 5s</span></label></div></div>
+          <div class="field"><span>Failure</span><div class="toggles"><label class="toggle"><input type="checkbox" id="load-fail"> Make it fail</label></div></div>
+          <label class="field"><span>Look</span><span class="select"><select id="load-look"><option value="film">Film</option><option value="frost">Frost</option><option value="liquid">Liquid</option><option value="none">None</option><option value="shader">Your shader</option><option value="view">Your view</option></select></span></label>
+        </div>
+        <p class="load-note" id="load-note" role="status"></p>
+      </div>
+      <div class="code" data-tabs><div class="code-bar" role="tablist"><button class="tab" role="tab" aria-selected="true">Built in</button><button class="tab" role="tab" aria-selected="false">Your shader</button><button class="tab" role="tab" aria-selected="false">Your view</button><button class="btn small copy" type="button" aria-label="Copy the code"><span class="go">Copy</span><span class="ok">Copied</span></button></div>
+<pre><code>unfurl(items, { loading: "film", loadingDelay: 250 });   // the default: "film" or "none"
+
+import "frankaa/loading";                                  // adds "frost" and "liquid"
+unfurl(items, { loading: "frost" });</code></pre>
+<pre hidden><code>unfurl(items, {
+  loading: {
+    uniforms: { uTint: [0.14, 0.19, 0.42] },
+    fragment: `precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uPreview;
+uniform float uHasPreview, uTime, uFailed;
+uniform vec3 uTint;
+void main() {
+  vec3 base = uHasPreview &gt; 0.5 ? texture2D(uPreview, vUv).rgb : vec3(0.15);
+  float wave = 0.5 + 0.5 * sin(vUv.y * 18.0 - uTime * 3.0);
+  vec3 col = mix(base, uTint, 0.35 * wave);
+  gl_FragColor = vec4(uFailed &gt; 0.5 ? col * 0.5 : col, 1.0);
+}`,
+  },
+});</code></pre>
+<pre hidden><code>unfurl(items, {
+  loading: (host, { index, failed, retry }) =&gt; {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = failed ? "Try again" : `Fetching photo ${index + 1}`;
+    chip.disabled = !failed;
+    chip.onclick = retry;
+    host.append(chip);
+    return () =&gt; chip.remove();
+  },
+});</code></pre>
+      </div>
+    </section>
+
     <!-- ---------- playground ---------- -->
     <section class="part" id="play" aria-labelledby="h-play">
       <div class="head"><div><h2 id="h-play"><small>playground</small>Try every option</h2><p>The demos on this page follow these settings. Events print below as they fire.</p></div></div>
@@ -450,6 +507,7 @@ drumline(el, items, { lightbox: { effect: "ripple", strip: "minimal" } });  // a
 
 <script type="module">
 import { procession, unfurl, drumline, registerEffect, checkEffect, supported } from "./lib/index.js";
+import "./lib/loading.js";
 
 // ---------- Photos (CC0): one list for every part ----------
 const P = {
@@ -627,6 +685,60 @@ for (const [id, name, line] of FX) {
   c.querySelector(".meta .btn").addEventListener("click", play);
   $("#fx-grid").append(c);
 }
+
+// ---------- loading demo: a service worker slows (or fails) the photos it opens ----------
+// It is registered only here, the first time a photo is opened with Slow or Fail on, and only answers photo
+// requests that carry fk-slow or fk-fail; everything else goes to the network as usual.
+const loadIds = ["h11", "h18", "h03", "h23"];
+const loadNote = $("#load-note"), loadLook = $("#load-look"), loadFail = $("#load-fail");
+let slowSw = null;
+const slowWorker = () => slowSw ??= (async () => {
+  if (!("serviceWorker" in navigator) || !isSecureContext) return false;
+  try {
+    await navigator.serviceWorker.register("sw-slow.js");
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise((r) => { navigator.serviceWorker.addEventListener("controllerchange", r, { once: true }); setTimeout(r, 1500); });
+    return !!navigator.serviceWorker.controller;
+  } catch { return false; }
+})();
+const LOAD_SHADER = { uniforms: { uTint: [0.14, 0.19, 0.42] }, fragment: `precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uPreview;
+uniform float uHasPreview, uTime, uFailed;
+uniform vec3 uTint;
+void main() {
+  vec3 base = uHasPreview > 0.5 ? texture2D(uPreview, vUv).rgb : vec3(0.15);
+  float wave = 0.5 + 0.5 * sin(vUv.y * 18.0 - uTime * 3.0);
+  vec3 col = mix(base, uTint, 0.35 * wave);
+  gl_FragColor = vec4(uFailed > 0.5 ? col * 0.5 : col, 1.0);
+}` };
+const loadView = (host, { index, failed, retry }) => {
+  const chip = document.createElement("button");
+  chip.type = "button"; chip.className = "load-chip";
+  chip.textContent = failed ? "Try again" : `Fetching photo ${index + 1}`;
+  chip.disabled = !failed;
+  chip.addEventListener("click", retry);
+  host.append(chip);
+  return () => chip.remove();
+};
+const loadTiles = loadIds.map((id, i) => {
+  const b = document.createElement("button"); b.type = "button"; b.className = "tile"; b.setAttribute("aria-label", `Open photo ${i + 1}: ${P[id][0]}`);
+  const img = document.createElement("img"); img.src = `photos/${id}-800.jpg`; img.alt = ""; img.width = 800; img.height = 600; img.decoding = "async";
+  b.append(img);
+  b.addEventListener("click", async () => {
+    const ms = Number(document.querySelector('input[name="net"]:checked').value), fail = loadFail.checked;
+    const worker = ms || fail ? await slowWorker() : false;
+    loadNote.textContent = (ms || fail) && !worker ? "This browser shows the demo at full speed (it needs a service worker)." : "";
+    // Fresh addresses on every open, so the wait always shows; the photo tapped fails once with Fail on.
+    const t = Date.now().toString(36);
+    const list = loadIds.map((x, k) => ({ ...item(x), srcset: undefined, sizes: undefined, full: `photos/${x}.jpg?fk-t=${t}${ms ? `&fk-slow=${ms}` : ""}${fail && k === i ? "&fk-fail=1" : ""}` }));
+    const v = loadLook.value;
+    unfurl(list, { start: i, origin: (n) => loadTiles[n].querySelector("img"), radius: 14, effect: S.effect, renderer: S.renderer, reducedMotion: S.motion, label: "Loading demo",
+      loading: v === "shader" ? LOAD_SHADER : v === "view" ? loadView : v });
+  });
+  $("#load-grid").append(b);
+  return b;
+});
 
 // ---------- playground controls ----------
 const effectSel = $("#pg-effect"), editor = $("#editor"), src = $("#pg-src"), status = $("#pg-status");
