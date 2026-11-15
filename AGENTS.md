@@ -17,6 +17,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 | Slider only | `import { procession } from "frankaa/slider"` |
 | Lightbox only | `import { unfurl } from "frankaa/lightbox"` |
 | Strip only | `import { drumline } from "frankaa/drumline"` |
+| Frost and liquid loading looks | `import "frankaa/loading"` (then `loading: "frost"`), or `import { frost, liquid } from "frankaa/loading"` |
 | Both | `import { procession, unfurl } from "frankaa"` |
 | React | `import { Procession, Drumline, useUnfurl } from "frankaa/react"` |
 | Styles (always, once) | `import "frankaa/style.css"` |
@@ -33,7 +34,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 - **Origin.** Pass `origin` so the photo springs from and back to its thumbnail, and set `radius` to the thumbnail's border radius. From a slider, use `origin: (n) => slider.image(n)` and `onChange: (n) => slider.go(n, false)`.
 - **Effects.** Default `"displacement"`. Use `"fade"` for a quiet product, `"none"` for instant. Custom shaders: register with `registerEffect` and check with `checkEffect`; never compile shader source from users.
 - **Videos.** Use `{ type: "video", provider, src, poster }` items; give the poster the video's shape. Add the providers to the site's CSP `frame-src`. Never build embed URLs yourself; pass the link and frankaa validates it. mp4 slides come with frankaa's own controls (play, pause, seek, volume, full screen; a tap pauses rather than closes), so do not add native controls or a custom player.
-- **Loading.** Keep the default `loading: "film"` and `loadingDelay`. Pass `thumb`, `width` and `height` on items so a slow photo shows a preview in the right shape. For a custom look use `loading: { fragment, uniforms }` (check it with `checkLoading`) or `loading: (host, state) => cleanup`; never draw a spinner over the dialog yourself, and react to `onLoadStart`/`onLoadEnd` instead of polling.
+- **Loading.** Opening and moving never wait for a photo. Keep the default `loading: "film"`; `"frost"` and `"liquid"` need `import "frankaa/loading"` and `loadingDelay`. Pass `thumb`, `width` and `height` on items so a slow photo shows a preview in the right shape. For a custom look use `loading: { fragment, uniforms }` (check it with `checkLoading`) or `loading: (host, state) => cleanup`; never draw a spinner over the dialog yourself, and react to `onLoadStart`/`onLoadEnd` instead of polling.
 - **Extra buttons** go in `topActions` (or `controls`, or React `renderControls` plus `{lightbox.portal}`), never by querying the dialog's DOM.
 - **Cleanup.** `destroy()` fires `onCloseStart`/`onCloseEnd` with `reason: "destroy"`, so reset app state in `onCloseEnd`.
 - **Autoplay** stays off unless the person asks for it.

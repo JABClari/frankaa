@@ -213,12 +213,13 @@ Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`. `des
 
 The `api` that actions and controls get is `{ index, item, close(), next(), prev(), show(i) }`.
 
-Also exported: `supported()` (is there WebGL), `registerEffect(name, effect)`, `checkEffect(effect)` (compile a shader up front; returns null or the compiler message), `checkLoading(shader)` (the same for a loading shader), and `effectNames()`.
+Also exported: `supported()` (is there WebGL), `registerEffect(name, effect)`, `checkEffect(effect)` (compile a shader up front; returns null or the compiler message), `checkLoading(shader)` (the same for a loading shader), `registerLoading(name, shader)`, `loadingNames()` and `effectNames()`.
 
 ### Loading
 
-A move never waits for the next photo. If it is not ready, the lightbox moves at once (with the effect) to the best picture it already has, the photo's `placeholder` image or its thumbnail (`thumb`, else `src`, usually in the browser's cache from the grid or the filmstrip), in the photo's shape, with a loading material over it. A small ring comes in at the bottom right after `loadingDelay` (250 ms), so fast loads never show it, and screen readers hear "Loading photo 3". When the photo has decoded it dissolves in, in place, and the ring completes and fades.
+Opening and moving never wait for the photo. If it is not ready, the lightbox springs open from the tile, or moves, (with the effect) to the best picture it already has, the photo's `placeholder` image or its thumbnail (`thumb`, else `src`, usually in the browser's cache from the grid or the filmstrip), in the photo's shape, with a loading material over it. A small ring comes in at the bottom right after `loadingDelay` (250 ms), so fast loads never show it, and screen readers hear "Loading photo 3". When the photo has decoded it dissolves in, in place, and the ring completes and fades.
 
+- Opening: the spring from the tile, its radius and the lifted tile are the same as for a photo that is already there; a photo in the cache opens straight to itself.
 - No preview: an empty frame in the photo's shape (from `width` and `height` when given, else the box before it) with the material on a neutral base. Never the old photo.
 - Failure: the material dims and the frame says "This photo didn't load" with a Retry button. `onError` fires as before (`reason: "load"`, `fallback: "none"`).
 - Quick taps: only the latest move changes the picture. A filmstrip jump loads that photo and its neighbours at once.
@@ -227,14 +228,20 @@ A move never waits for the next photo. If it is not ready, the lightbox moves at
 | `loading` | WebGL | CSS |
 | --- | --- | --- |
 | `"film"` (default) | An iridescent thin-film sheen drifting over the frosted preview | The film on a neutral frame, transform only (no photo under it) |
-| `"frost"` | Etched glass with a slow band of light refracting through it | The film |
-| `"liquid"` | The preview flowing under a glossy, domain-warped surface | The film |
+| `"frost"` (with `frankaa/loading`) | Etched glass with a slow band of light refracting through it | The film |
+| `"liquid"` (with `frankaa/loading`) | The preview flowing under a glossy, domain-warped surface | The film |
 | `"none"` | The blurred preview alone | A neutral frame |
 | `{ fragment, uniforms }` | Your shader | The film |
 | `(host, state) => cleanup` | Your view over the blurred preview | Your view over a neutral frame |
 
 ```js
-unfurl(items, { loading: "frost", loadingDelay: 400 });
+unfurl(items, { loading: "film", loadingDelay: 400 }); // "film" and "none" are built in
+
+// frost and liquid live in their own entry, so the lightbox carries only the film. Importing it registers them
+// (like registerEffect); or pass the objects.
+import { liquid } from "frankaa/loading";
+unfurl(items, { loading: "frost" });
+unfurl(items, { loading: liquid });
 
 // Your own material (WebGL): the same spirit as effects.
 unfurl(items, {
@@ -269,7 +276,7 @@ unfurl(items, {
 });
 ```
 
-The loading shader contract: GLSL ES 1.0, `precision mediump float;`, `varying vec2 vUv` (0 to 1 across the box, top left at 0, 0), uniforms `uPreview` (`sampler2D`, the preview already blurred and cropped to the frame), `uHasPreview` (0 or 1), `uTime` (seconds since loading began; still with reduced motion), `uResolution` (the box in device pixels), `uFailed` (0 or 1), plus your own. frankaa clips it to the rounded box and does the reveal itself. A shader that does not compile fires `onError` with `reason: "shader"` and `fallback: "none"`, and the built-in film is used. The material is drawn at no more than one texel per CSS pixel, so keep it cheap anyway.
+The loading shader contract: GLSL ES 1.0, `precision mediump float;`, `varying vec2 vUv` (0 to 1 across the box, top left at 0, 0), uniforms `uPreview` (`sampler2D`, the preview already blurred and cropped to the frame), `uHasPreview` (0 or 1), `uTime` (seconds since loading began; still with reduced motion), `uResolution` (the box in device pixels), `uFailed` (0 or 1), plus your own. frankaa clips it to the rounded box and does the reveal itself. A shader that does not compile fires `onError` with `reason: "shader"` and `fallback: "none"`, and the built-in film is used; so does a name nothing registered (the message says when `frankaa/loading` is missing). `registerLoading(name, { fragment, uniforms })` adds your own by name. The material is drawn at no more than one texel per CSS pixel, so keep it cheap anyway.
 
 Reduced motion: the materials stand still, the ring turns slower, and the photo arrives with a short fade.
 
@@ -479,7 +486,8 @@ Minified and gzipped, each with the code it pulls in:
 | --- | --- |
 | `frankaa/slider` | 5.0 kB |
 | `frankaa/lightbox` | 23.9 kB (the filmstrip loads only when used) |
-| `frankaa/drumline` | 10.0 kB (the lightbox loads on the first tap) |
+| `frankaa/drumline` | 9.9 kB (the lightbox loads on the first tap) |
+| `frankaa/loading` | 1.4 kB (the frost and liquid materials) |
 | `frankaa` (all three) | 32.9 kB |
 | `frankaa/react` (all three, with bindings) | 33.8 kB |
 | `frankaa/style.css` | 4.7 kB |

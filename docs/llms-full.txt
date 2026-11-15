@@ -43,6 +43,7 @@ import { procession, unfurl } from "frankaa";          // both parts
 import { procession } from "frankaa/slider";            // slider only (about 5 kB gzipped)
 import { unfurl } from "frankaa/lightbox";              // lightbox only (about 24 kB gzipped)
 import { drumline } from "frankaa/drumline";            // the strip (about 10 kB gzipped)
+import { frost, liquid } from "frankaa/loading";        // two more loading materials (about 1.4 kB gzipped)
 import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
 import "frankaa/style.css";                              // required once, anywhere in the app
 
@@ -51,6 +52,8 @@ supported(): boolean                         is WebGL available
 registerEffect(name, effect): void           add a named shader effect
 checkEffect(effect | fragment): string|null  compile a shader now; null when it compiles, else the compiler message
 checkLoading(shader | fragment): string|null the same for a loading shader
+registerLoading(name, shader): void          add a named loading material (frankaa/loading registers "frost", "liquid")
+loadingNames(): string[]                     loading material names registered so far
 effectNames(): string[]                      names registered so far
 UNFURL_LABELS, PROCESSION_LABELS             the default English strings
 
@@ -104,7 +107,7 @@ start         number               photo to open on. Default 0
 origin        (i) => Element | DOMRect | null   where photo i sits on the page now. It springs from there and back. Null or off screen: it fades.
 effect        "displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | Effect object. Default "displacement"
 renderer      "auto" | "webgl" | "css"   default "auto" (WebGL when available, else CSS)
-loading       "film" | "frost" | "liquid" | "none" | LoadingShader | LoadingRender   default "film". What a photo shows while it loads (see 5.18)
+loading       "film" | "none" | registered name ("frost", "liquid" with frankaa/loading) | LoadingShader | LoadingRender   default "film". What a photo shows while it loads (see 5.18)
 loadingDelay  number               ms before the loading ring and the "Loading photo" label. Default 250
 reducedMotion "system" | "always" | "never"   default "system"; reduced = short fade, no spring, no effect
 label         string               shorthand for labels.dialog
@@ -409,7 +412,8 @@ lb.destroy(); // e.g. on route change: still fires onCloseStart and onCloseEnd
 
 --- 5.18 Loading: slow, missing and failing photos ---
 
-A move never waits for the next photo. Not ready yet: the lightbox moves at once (with the effect) to its preview,
+Opening and moving never wait for the photo. Not ready yet: the lightbox springs open from the tile (same spring,
+radius and lifted tile as always), or moves at once with the effect, to its preview,
 the placeholder image or else the thumbnail (thumb ?? src, usually cached from the grid or filmstrip), in the photo's
 shape, with a loading material over it. After loadingDelay (250 ms) a small ring shows bottom right, the frame gets
 aria-busy, and screen readers hear labels.loading ("Loading photo 3"). The photo then dissolves in, in place (about
@@ -420,7 +424,11 @@ aria-busy, and screen readers hear labels.loading ("Loading photo 3"). The photo
 - Quick taps: only the latest move changes the picture. Filmstrip jumps load that photo and its neighbours at once.
 - Videos keep their poster behaviour. Pass width and height on items so the frame has the right shape at once.
 
-unfurl(items, { loading: "frost", loadingDelay: 400 });     // "film" (default) | "frost" | "liquid" | "none"
+unfurl(items, { loading: "none", loadingDelay: 400 });      // "film" (default) | "none" are built in
+import { liquid } from "frankaa/loading";                    // registers "frost" and "liquid"
+unfurl(items, { loading: "frost" });                        // by name, after the import
+unfurl(items, { loading: liquid });                         // or the object
+// An unregistered name fires onError({ reason: "shader", fallback: "none" }) and the film is used.
 
 // Your own material (WebGL; the CSS renderer shows its film instead):
 const loading = { uniforms: { uTint: [0.2, 0.5, 1] }, fragment: `
