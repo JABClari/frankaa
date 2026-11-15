@@ -191,6 +191,8 @@ Returns `{ index, renderer, el, go(i, smooth?), next(), prev(), expand(i?), imag
 | `origin` | `(i) => Element \| DOMRect \| null` | | Where photo i sits on the page. Null, or off screen, means it fades instead |
 | `loop` | `boolean` | `false` | Wrap from the last photo to the first. Off: the ends rubber-band and the arrow there is marked unavailable |
 | `effect` | `string \| Effect` | `"displacement"` | `"displacement"`, `"ripple"`, `"fade"`, `"zoom"`, `"none"`, a registered name, or your own shader |
+| `loading` | `"film" \| "frost" \| "liquid" \| "none" \| LoadingShader \| LoadingRender` | `"film"` | What a photo shows while it loads (below) |
+| `loadingDelay` | `number` | `250` | ms before the loading ring and the "Loading photo" label, so fast loads never show them |
 | `renderer` | `"auto" \| "webgl" \| "css"` | `"auto"` | Auto uses WebGL where it is there, else CSS. CSS never touches WebGL |
 | `swipe` | `"effect" \| "strip"` | `"effect"` | With WebGL, a sideways swipe runs the effect under the finger (its progress follows the drag, then finishes or rewinds on release). `"strip"` slides the photos side by side. CSS always slides |
 | `reducedMotion` | `"system" \| "always" \| "never"` | `"system"` | Reduced motion: a short fade, no spring, no effect |
@@ -211,7 +213,72 @@ Returns `{ index, renderer, next(), prev(), show(i), close(), destroy() }`. `des
 
 The `api` that actions and controls get is `{ index, item, close(), next(), prev(), show(i) }`.
 
-Also exported: `supported()` (is there WebGL), `registerEffect(name, effect)`, `checkEffect(effect)` (compile a shader up front; returns null or the compiler message), and `effectNames()`.
+Also exported: `supported()` (is there WebGL), `registerEffect(name, effect)`, `checkEffect(effect)` (compile a shader up front; returns null or the compiler message), `checkLoading(shader)` (the same for a loading shader), `registerLoading(name, shader)`, `loadingNames()` and `effectNames()`.
+
+### Loading
+
+Opening and moving never wait for the photo. If it is not ready, the lightbox springs open from the tile, or moves, (with the effect) to the best picture it already has, the photo's `placeholder` image or its thumbnail (`thumb`, else `src`, usually in the browser's cache from the grid or the filmstrip), in the photo's shape, with a loading material over it. A small ring comes in at the bottom right after `loadingDelay` (250 ms), so fast loads never show it, and screen readers hear "Loading photo 3". When the photo has decoded it dissolves in, in place, and the ring completes and fades.
+
+- Opening: the spring from the tile, its radius and the lifted tile are the same as for a photo that is already there; a photo in the cache opens straight to itself.
+- No preview: an empty frame in the photo's shape (from `width` and `height` when given, else the box before it) with the material on a neutral base. Never the old photo.
+- Failure: the material dims and the frame says "This photo didn't load" with a Retry button. `onError` fires as before (`reason: "load"`, `fallback: "none"`).
+- Quick taps: only the latest move changes the picture. A filmstrip jump loads that photo and its neighbours at once.
+- Videos keep their poster behaviour.
+
+| `loading` | WebGL | CSS |
+| --- | --- | --- |
+| `"film"` (default) | An iridescent thin-film sheen drifting over the frosted preview | The film on a neutral frame, transform only (no photo under it) |
+| `"frost"` (with `frankaa/loading`) | Etched glass with a slow band of light refracting through it | The film |
+| `"liquid"` (with `frankaa/loading`) | The preview flowing under a glossy, domain-warped surface | The film |
+| `"none"` | The blurred preview alone | A neutral frame |
+| `{ fragment, uniforms }` | Your shader | The film |
+| `(host, state) => cleanup` | Your view over the blurred preview | Your view over a neutral frame |
+
+```js
+unfurl(items, { loading: "film", loadingDelay: 400 }); // "film" and "none" are built in
+
+// frost and liquid live in their own entry, so the lightbox carries only the film. Importing it registers them
+// (like registerEffect); or pass the objects.
+import { liquid } from "frankaa/loading";
+unfurl(items, { loading: "frost" });
+unfurl(items, { loading: liquid });
+
+// Your own material (WebGL): the same spirit as effects.
+unfurl(items, {
+  loading: {
+    uniforms: { uTint: [0.2, 0.5, 1] },
+    fragment: `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uPreview;
+uniform float uHasPreview;
+uniform float uTime;
+uniform float uFailed;
+uniform vec3 uTint;
+void main() {
+  vec3 base = uHasPreview > 0.5 ? texture2D(uPreview, vUv).rgb : vec3(0.15);
+  float pulse = 0.5 + 0.5 * sin(uTime * 2.0 + vUv.x * 6.0);
+  vec3 col = mix(base, uTint, 0.25 * pulse);
+  gl_FragColor = vec4(uFailed > 0.5 ? col * 0.5 : col, 1.0);
+}`,
+  },
+});
+
+// Your own view, in either renderer: drawn over the photo's box; return a function to tidy up.
+unfurl(items, {
+  loading: (host, { index, failed, retry }) => {
+    const p = document.createElement("p");
+    p.textContent = failed ? "Not this time." : `Fetching ${index + 1}...`;
+    if (failed) p.onclick = retry;
+    host.append(p);
+    return () => p.remove();
+  },
+});
+```
+
+The loading shader contract: GLSL ES 1.0, `precision mediump float;`, `varying vec2 vUv` (0 to 1 across the box, top left at 0, 0), uniforms `uPreview` (`sampler2D`, the preview already blurred and cropped to the frame), `uHasPreview` (0 or 1), `uTime` (seconds since loading began; still with reduced motion), `uResolution` (the box in device pixels), `uFailed` (0 or 1), plus your own. frankaa clips it to the rounded box and does the reveal itself. A shader that does not compile fires `onError` with `reason: "shader"` and `fallback: "none"`, and the built-in film is used; so does a name nothing registered (the message says when `frankaa/loading` is missing). `registerLoading(name, { fragment, uniforms })` adds your own by name. The material is drawn at no more than one texel per CSS pixel, so keep it cheap anyway.
+
+Reduced motion: the materials stand still, the ring turns slower, and the photo arrives with a short fade.
 
 ### Videos
 
@@ -267,6 +334,8 @@ Every hook is also dispatched as a bubbling DOM `CustomEvent` named `frankaa:<ke
 | `onAnimationStart` | `frankaa:animation-start` | both | `{ type, index }`, type `"open"`, `"close"`, `"change"` or `"slide"` |
 | `onAnimationEnd` | `frankaa:animation-end` | both | as above, plus `cancelled: true` when `destroy()` cut it short; every start has exactly one end |
 | `onError` | `frankaa:error` | both | `{ index, src, reason, fallback, message? }`, reason `"cors"`, `"load"`, `"webgl"`, `"shader"` or `"media"` |
+| `onLoadStart` | `frankaa:load-start` | lightbox | `{ index }`: a photo is on screen with its loading look (also after Retry) |
+| `onLoadEnd` | `frankaa:load-end` | lightbox | `{ index, ok }`: it arrived, or did not load (`onError` fires too) |
 | `onSelect` | | slider | `(index, img)`, a click or Enter on the photo showing |
 
 ```js
@@ -292,6 +361,9 @@ Every string can be replaced. `{n}` and `{total}` are filled in.
 | `seek`, `volume` | `Seek`, `Volume` | | |
 | `fullscreen`, `exitFullscreen` | `Full screen`, `Exit full screen` | | |
 | `timeOf` | `{time} of {duration}` | | |
+| `loading` | `Loading photo {n}` | | |
+| `failed` | `This photo didn't load` | | |
+| `retry` | `Retry` | | |
 
 ```js
 unfurl({ photos, labels: { dialog: "Fotos", close: "Cerrar", next: "Siguiente", previous: "Anterior", position: "Foto {n} de {total}" } });
@@ -412,17 +484,19 @@ Minified and gzipped, each with the code it pulls in:
 
 | Import | Size |
 | --- | --- |
-| `frankaa/slider` | 4.9 kB |
-| `frankaa/lightbox` | 16.2 kB (the filmstrip loads only when used) |
-| `frankaa/drumline` | 9.4 kB (the lightbox loads on the first tap) |
-| `frankaa` (all three) | 24.9 kB |
-| `frankaa/react` (all three, with bindings) | 25.8 kB |
-| `frankaa/style.css` | 3.2 kB |
+| `frankaa/slider` | 5.0 kB |
+| `frankaa/lightbox` | 23.9 kB (the filmstrip loads only when used) |
+| `frankaa/drumline` | 9.9 kB (the lightbox loads on the first tap) |
+| `frankaa/loading` | 1.4 kB (the frost and liquid materials) |
+| `frankaa` (all three) | 32.9 kB |
+| `frankaa/react` (all three, with bindings) | 33.8 kB |
+| `frankaa/style.css` | 4.7 kB |
 
 ## Performance
 
 - At rest, springing and swiping, each photo is drawn in one pass (a transform in CSS, one textured quad in WebGL); the effect shader runs only during a key or button change.
-- Photos are decoded with `img.decode()` before they are shown or uploaded, and only the current photo and its neighbours are loaded, the neighbours when the browser is idle.
+- Photos are decoded with `img.decode()` before they are shown or uploaded, and only the current photo and its neighbours are loaded, the neighbours when the browser is idle (at once after a filmstrip jump).
+- The loading material runs only while a photo loads, drawn offscreen at no more than one texel per CSS pixel (1024 a side at most) and scaled into the box; the CSS film animates transform only.
 - Layout is read when the lightbox opens or resizes, never inside an animation frame.
 - `npm run check:perf` records frames during open, close, a swipe, every effect and the CSS renderer, on desktop and on an iPhone-sized viewport with the CPU slowed 4x. On an Apple silicon Mac it holds 60 fps on desktop, and the CSS renderer keeps every frame under 18 ms at 4x.
 
@@ -448,6 +522,7 @@ npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis
 npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks
 npm run check:features # actions and controls, videos, destroy() hooks, zoom, resets, slider options
 npm run check:drumline # every preset and fluid mode, WebGL bend and its fallback, the filmstrip, React StrictMode
+npm run check:loading  # slow, missing and failing photos in both renderers: the ring, the reveal, Retry, quick taps
 ```
 
 The docs page is `docs/index.html`; serve the folder and open it.

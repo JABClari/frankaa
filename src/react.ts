@@ -8,13 +8,13 @@ import { createPortal } from "react-dom";
 import { procession, type Procession as Slider, type ProcessionOptions } from "./slider";
 import { unfurl, type Unfurl, type UnfurlApi, type UnfurlOptions } from "./lightbox";
 import { drumline, type Drumline as DrumlineCore, type DrumlineOptions } from "./drumline";
-import { slideSrc, toItem, type Items } from "./items";
+import { isColor, slideSrc, toItem, type Items } from "./items";
 
 // The placeholder as React style (a colour, or an image address), matching what the parts set.
 function placeholderCss(v: string | undefined): CSSProperties | undefined {
   if (!v) return undefined;
   const t = v.trim();
-  return /^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(t) || /^[a-z]+$/i.test(t) ? { backgroundColor: t } : { backgroundImage: `url(${JSON.stringify(t)})`, backgroundSize: "cover", backgroundPosition: "center" };
+  return isColor(t) ? { backgroundColor: t } : { backgroundImage: `url(${JSON.stringify(t)})`, backgroundSize: "cover", backgroundPosition: "center" };
 }
 
 // Every on* option is wrapped so it always calls the latest prop without rebuilding.
@@ -148,7 +148,7 @@ export function useUnfurl(items: Items, options: UseUnfurlOptions = {}) {
   const open = useCallback((start = 0) => {
     inst.current?.destroy({ hooks: false });
     const { renderControls, onDestroy: _d, items: list, ...o } = latest.current;
-    const hooks = latestHooks(latest, ["onOpenStart", "onOpenEnd", "onCloseStart", "onAnimationStart", "onAnimationEnd", "onError"]);
+    const hooks = latestHooks(latest, ["onOpenStart", "onOpenEnd", "onCloseStart", "onAnimationStart", "onAnimationEnd", "onError", "onLoadStart", "onLoadEnd"]);
     inst.current = unfurl(list ?? [], {
       ...o, ...hooks, start,
       controls: renderControls ? (host, api) => { setSlot({ host, api, index: api.index }); return () => setSlot(null); } : undefined,

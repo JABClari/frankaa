@@ -40,9 +40,10 @@ React:
 npm install frankaa
 
 import { procession, unfurl } from "frankaa";          // both parts
-import { procession } from "frankaa/slider";            // slider only (about 3.3 kB gzipped)
-import { unfurl } from "frankaa/lightbox";              // lightbox only (about 16 kB gzipped)
-import { drumline } from "frankaa/drumline";            // the strip (about 9.4 kB gzipped)
+import { procession } from "frankaa/slider";            // slider only (about 5 kB gzipped)
+import { unfurl } from "frankaa/lightbox";              // lightbox only (about 24 kB gzipped)
+import { drumline } from "frankaa/drumline";            // the strip (about 10 kB gzipped)
+import { frost, liquid } from "frankaa/loading";        // two more loading materials (about 1.4 kB gzipped)
 import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
 import "frankaa/style.css";                              // required once, anywhere in the app
 
@@ -50,6 +51,9 @@ Also exported from "frankaa" and "frankaa/lightbox":
 supported(): boolean                         is WebGL available
 registerEffect(name, effect): void           add a named shader effect
 checkEffect(effect | fragment): string|null  compile a shader now; null when it compiles, else the compiler message
+checkLoading(shader | fragment): string|null the same for a loading shader
+registerLoading(name, shader): void          add a named loading material (frankaa/loading registers "frost", "liquid")
+loadingNames(): string[]                     loading material names registered so far
 effectNames(): string[]                      names registered so far
 UNFURL_LABELS, PROCESSION_LABELS             the default English strings
 
@@ -103,9 +107,11 @@ start         number               photo to open on. Default 0
 origin        (i) => Element | DOMRect | null   where photo i sits on the page now. It springs from there and back. Null or off screen: it fades.
 effect        "displacement" | "ripple" | "fade" | "zoom" | "none" | registered name | Effect object. Default "displacement"
 renderer      "auto" | "webgl" | "css"   default "auto" (WebGL when available, else CSS)
+loading       "film" | "none" | registered name ("frost", "liquid" with frankaa/loading) | LoadingShader | LoadingRender   default "film". What a photo shows while it loads (see 5.18)
+loadingDelay  number               ms before the loading ring and the "Loading photo" label. Default 250
 reducedMotion "system" | "always" | "never"   default "system"; reduced = short fade, no spring, no effect
 label         string               shorthand for labels.dialog
-labels        Partial<UnfurlLabels>   dialog, close, next, previous, position ("Photo {n} of {total}"), counter ("{n} / {total}"), videoPosition, play, pause, mute, unmute, seek, volume, fullscreen, exitFullscreen, timeOf ("{time} of {duration}")
+labels        Partial<UnfurlLabels>   dialog, close, next, previous, position ("Photo {n} of {total}"), counter ("{n} / {total}"), loading ("Loading photo {n}"), failed ("This photo didn't load"), retry ("Retry"), videoPosition, play, pause, mute, unmute, seek, volume, fullscreen, exitFullscreen, timeOf ("{time} of {duration}")
 focusTrap     boolean              default true (also sets aria-modal)
 returnFocus   boolean | HTMLElement   default true: focus returns to the element focused before opening
 announce      boolean              default true
@@ -123,7 +129,8 @@ Gestures: with WebGL a sideways swipe runs the effect under the finger, its prog
 Hooks: onOpenStart({ index }), onOpenEnd({ index, renderer }), onCloseStart({ index }), onCloseEnd({ index }),
        onChange(index, { index, from, how: "key" | "button" | "swipe" | "api" }),
        onAnimationStart({ type: "open" | "close" | "change", index }), onAnimationEnd(same),
-       onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback: "css" | "none", message? })
+       onError({ index, src, reason: "cors" | "load" | "webgl" | "shader", fallback: "css" | "none", message? }),
+       onLoadStart({ index }), onLoadEnd({ index, ok })   a photo shown with its loading look, and when it arrived or failed
 
 Returns: { index, renderer: "webgl" | "css", next(), prev(), show(i), close(), destroy() }
 api (for actions and controls): { index, item, close(), next(), prev(), show(i) }
@@ -158,7 +165,7 @@ Returns { index, renderer, el, go(i, smooth?), next(), prev(), expand(i?), image
 
 Every hook is also a bubbling CustomEvent "frankaa:" + kebab-case name, with the hook's detail object:
 frankaa:open-start, frankaa:open-end, frankaa:close-start, frankaa:close-end, frankaa:change,
-frankaa:slide-change, frankaa:animation-start, frankaa:animation-end, frankaa:error.
+frankaa:slide-change, frankaa:animation-start, frankaa:animation-end, frankaa:error, frankaa:load-start, frankaa:load-end.
 Slider events fire on the slider element. Lightbox events fire on options.container (default document.body).
 
 document.addEventListener("frankaa:error", (e) => console.warn(e.detail));
@@ -403,6 +410,60 @@ procession(card, {
 const lb = unfurl({ photos, onCloseEnd: ({ reason }) => setOpen(false) }); // reason "close" or "destroy"
 lb.destroy(); // e.g. on route change: still fires onCloseStart and onCloseEnd
 
+--- 5.18 Loading: slow, missing and failing photos ---
+
+Opening and moving never wait for the photo. Not ready yet: the lightbox springs open from the tile (same spring,
+radius and lifted tile as always), or moves at once with the effect, to its preview,
+the placeholder image or else the thumbnail (thumb ?? src, usually cached from the grid or filmstrip), in the photo's
+shape, with a loading material over it. After loadingDelay (250 ms) a small ring shows bottom right, the frame gets
+aria-busy, and screen readers hear labels.loading ("Loading photo 3"). The photo then dissolves in, in place (about
+700 ms; a short fade with reduced motion), and the ring completes and fades.
+- No preview: an empty frame in the photo's shape (width/height, else the box before it), material on a neutral base.
+- Failure: the material dims; "This photo didn't load" and a Retry button in the frame. onError({ reason: "load",
+  fallback: "none" }) as before; Retry asks again.
+- Quick taps: only the latest move changes the picture. Filmstrip jumps load that photo and its neighbours at once.
+- Videos keep their poster behaviour. Pass width and height on items so the frame has the right shape at once.
+
+unfurl(items, { loading: "none", loadingDelay: 400 });      // "film" (default) | "none" are built in
+import { liquid } from "frankaa/loading";                    // registers "frost" and "liquid"
+unfurl(items, { loading: "frost" });                        // by name, after the import
+unfurl(items, { loading: liquid });                         // or the object
+// An unregistered name fires onError({ reason: "shader", fallback: "none" }) and the film is used.
+
+// Your own material (WebGL; the CSS renderer shows its film instead):
+const loading = { uniforms: { uTint: [0.2, 0.5, 1] }, fragment: `
+precision mediump float;
+varying vec2 vUv;
+uniform sampler2D uPreview;   // the preview, blurred, in the frame's shape
+uniform float uHasPreview;    // 0 when there is none
+uniform float uTime;          // seconds since loading began (still with reduced motion)
+uniform vec2 uResolution;     // the box in device pixels
+uniform float uFailed;        // 1 once it failed: dim
+uniform vec3 uTint;
+void main() {
+  vec3 base = uHasPreview > 0.5 ? texture2D(uPreview, vUv).rgb : vec3(0.15);
+  vec3 col = mix(base, uTint, 0.25 * (0.5 + 0.5 * sin(uTime * 2.0 + vUv.x * 6.0)));
+  gl_FragColor = vec4(uFailed > 0.5 ? col * 0.5 : col, 1.0);
+}` };
+checkLoading(loading);                                       // null, or the compiler message
+unfurl(items, { loading });
+// A compile error fires onError({ reason: "shader", fallback: "none", message }) and the built-in film is used.
+
+// Your own view, any renderer: laid over the photo's box; frankaa still shows the preview under it and reveals.
+unfurl(items, {
+  loading: (host, { index, failed, retry }) => {
+    const p = document.createElement("p");
+    p.textContent = failed ? "Not this time." : `Fetching ${index + 1}...`;
+    if (failed) p.onclick = retry;
+    host.append(p);
+    return () => p.remove();
+  },
+  onLoadEnd: ({ index, ok }) => console.log(index, ok),
+});
+
+Styling: --fk-load-base (neutral frame), --fk-ring, --fk-ring-track. Classes: .fk-unfurl-load (the view, aria-busy),
+.fk-unfurl-ring, .fk-unfurl-fail, .fk-unfurl-retry, .fk-unfurl-mat (the CSS film).
+
 ====================================================================
 6. RULES OF THUMB
 ====================================================================
@@ -410,6 +471,7 @@ lb.destroy(); // e.g. on route change: still fires onCloseStart and onCloseEnd
 - renderer "auto" is right for most sites. Use "css" when photos are on another origin without CORS headers, for the lightest path, or when WebGL is unwanted.
 - Photos from a CDN with WebGL: the CDN must send Access-Control-Allow-Origin. Without it, frankaa falls back to CSS and fires onError with reason "cors".
 - Always pass alt text. Captions are optional and shown under the photo.
+- Keep the default loading ("film"); pass thumb (and width, height) on items so a slow photo has a preview in the right shape. Never add your own spinner over the lightbox: use loading or onLoadStart/onLoadEnd.
 - Pass origin so it springs from and back to the thumbnail; match radius to the thumbnail's border radius.
 - When the lightbox is opened from a slider, keep the slider in step with onChange: (n) => slider.go(n, false).
 - Give the slider's element a size (width from layout; height from aspect-ratio, default 4:3) so nothing shifts while photos load. Pass width and height on photos.

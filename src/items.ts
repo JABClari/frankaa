@@ -62,6 +62,19 @@ export const fullSrc = (x: Item): string => (isVideo(x) ? posterOf(x) : x.full ?
 /** The file a strip shows. */
 export const thumbSrc = (x: Item): string => x.thumb ?? (isVideo(x) ? posterOf(x) : x.src);
 
+/** A placeholder that is a colour rather than an image address. */
+export const isColor = (v: string): boolean => /^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(v.trim()) || /^[a-z]+$/i.test(v.trim());
+
+/**
+ * The picture that stands in for a photo while it loads: its placeholder when that is an image, else its thumbnail
+ * (thumb, else src: what the grid and the filmstrip show, so usually in the browser's cache already). Null when
+ * that would be the very file still loading.
+ */
+export function previewOf(x: { thumb?: string; src: string; placeholder?: string }, full: string): string | null {
+  const p = x.placeholder && !isColor(x.placeholder) ? x.placeholder.trim() : x.thumb ?? x.src;
+  return p && p !== full ? p : null;
+}
+
 /**
  * Read the two call shapes every part accepts: (items, options) or (options with items). `photos` is the older
  * name for items and still works.

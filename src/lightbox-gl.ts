@@ -4,11 +4,16 @@
 // - only while an effect runs (a key or button move, or a swipe, where the finger drives the effect's progress)
 //   does the effect shader draw the two photos into an offscreen texture first, which is then drawn into the box.
 //   A swipe falls back to the strip past the first or last photo, for videos, and with swipe: "strip".
+// - a move never waits for the next photo: when it is not on the GPU yet, the box takes its shape at once and shows
+//   the loading material (loading-shaders.ts) over a blurred preview, drawn offscreen at a capped size; the photo
+//   then dissolves in through noise, in place. Only the latest move ever changes the picture.
 // Photos are decoded off the main thread (img.decode()) before they are uploaded, and only the current photo and
-// its neighbours are uploaded, one at a time when the browser is idle. Raw WebGL1, no package.
-import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
-import { PRELUDE, easingFn, uniformKind, type Effect } from "./effects";
-import { maxTextureSide, uploadPhoto } from "./gl-fit";
+// its neighbours are uploaded, the neighbours when the browser is idle (at once after a jump). Raw WebGL1, no package.
+import { containBox, neighbours, radiusAt, stepBox, stripStep, draggedBox, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type LoadStatus, type R4, type Stage, type StageCtx, type StageSource } from "./lightbox-math";
+import { PRELUDE, easingFn, uniformKind, type Effect, type UniformValue } from "./effects";
+import { maxTextureSide, previewCanvas, uploadPhoto } from "./gl-fit";
+import { LOAD_GRACE_MS, frameAspect, latest, noiseBytes, revealProgress, type LoadingShader } from "./loading-math";
+import { isCrossOrigin } from "./shared";
 
 const EFFECT_VERT = `attribute vec2 p;
 varying vec2 vUv;
@@ -25,15 +30,22 @@ void main() {
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
 }`;
 
-// Draws a texture into a rounded box: a photo cover-fitted (asp), or the effect's offscreen result (part).
+// Draws a texture into a rounded box: a photo cover-fitted (asp), or an offscreen result (part). reveal below 1
+// lets the photo through only where noise has opened up: the dissolve over a loading material.
 const BOX_FRAG = `precision mediump float;
 varying vec2 uv;
 uniform sampler2D img;
+uniform sampler2D noise;
 uniform vec2 asp;
 uniform vec2 part;
 uniform vec2 size;
 uniform vec4 radius;
 uniform float alpha;
+uniform float reveal;
+float n(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  return texture2D(noise, (i + f * f * (3.0 - 2.0 * f) + 0.5) / 64.0).r;
+}
 void main() {
   vec2 c = uv * size - size * 0.5;
   float r = c.x < 0.0 ? (c.y < 0.0 ? radius.x : radius.w) : (c.y < 0.0 ? radius.y : radius.z);
@@ -41,11 +53,19 @@ void main() {
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
   float edge = clamp(0.5 - d, 0.0, 1.0);
   if (edge <= 0.0) discard;
-  gl_FragColor = vec4(texture2D(img, ((uv - 0.5) / asp + 0.5) * part).rgb, 1.0) * edge * alpha;
+  float a = edge * alpha;
+  if (reveal < 1.0) {
+    float m = (n(uv * 7.0 + 2.0) * 0.5 + n(uv * 14.0 + 5.0) * 0.25 + n(uv * 28.0 + 9.0) * 0.125) * 0.8 + uv.x * 0.15 + 0.05;
+    a *= smoothstep(m - 0.08, m + 0.08, reveal * 1.05);
+  }
+  gl_FragColor = vec4(texture2D(img, ((uv - 0.5) / asp + 0.5) * part).rgb, 1.0) * a;
 }`;
 
 const FADE_MS = 160;
 const PLAIN_MS = 260;
+const NOISE = 64;
+/** The loading material is drawn at most this many texels a side (it is soft by nature), then scaled into the box. */
+const MAT_MAX = 1024;
 
 /** True when this browser can draw the lightbox with WebGL. */
 export function supported(): boolean {
@@ -58,14 +78,27 @@ const idle = (f: () => void) => {
   const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
   if (w.requestIdleCallback) w.requestIdleCallback(f, { timeout: 300 }); else setTimeout(f, 50);
 };
+const sleep = (ms: number) => new Promise<"wait">((r) => setTimeout(() => r("wait"), ms));
 
-type Built = { stage: Stage; error?: undefined } | { stage?: undefined; error: { reason: "webgl" | "shader"; message: string } };
+type GlError = { reason: "webgl" | "shader"; message: string };
+/** A WebGL stage on this canvas, or the reason there cannot be one (no WebGL, or the effect did not compile).
+ *  warning: your loading shader did not compile, so the built-in one is used. */
+type Built = { stage: Stage; error?: undefined; warning?: GlError } | { stage?: undefined; error: GlError };
 
-/** A WebGL stage on this canvas, or the reason there cannot be one (no WebGL, or the shader did not compile). */
-/** A photo to draw: its address, and optionally srcset and sizes so the browser picks the right file. */
-export type GlSource = { src: string; srcset?: string; sizes?: string };
+/** A photo to draw: its address, srcset and sizes so the browser picks the right file, and its preview. */
+export type GlSource = StageSource;
+/** The loading material: a fragment shader (built-in or yours), your uniforms, and the built-in to use if yours
+ *  does not compile. */
+export type GlLoading = { fragment: string; uniforms?: Record<string, number | number[]>; fallback?: string };
 
-export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], effect: Effect, ctx: StageCtx): Built {
+/** What a load came to: on the GPU, failed, or a photo WebGL cannot use (no CORS headers, a refused upload). */
+type Loaded = "ok" | "failed" | "fallback";
+/** A texture standing for a photo this frame: its size (for coverUv) and its cover fit in the box. */
+type Face = { t: WebGLTexture; size: [number, number]; asp: [number, number] };
+
+const clean = (e: unknown) => String((e as Error).message).replace(/\0/g, "").trim();
+
+export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], effect: Effect, ctx: StageCtx, loading: GlLoading): Built {
   const srcs = sources.map((x) => x.src);
   let gl: WebGLRenderingContext | null = null;
   try { gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: true }) as WebGLRenderingContext | null; } catch { gl = null; }
@@ -89,9 +122,19 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     if (!g.getProgramParameter(p, g.LINK_STATUS)) throw new Error(g.getProgramInfoLog(p) || "the shader did not link");
     return p;
   };
-  let fx: WebGLProgram, bx: WebGLProgram;
-  try { bx = program(BOX_VERT, BOX_FRAG); } catch (e) { return { error: { reason: "webgl", message: String((e as Error).message) } }; }
-  try { fx = program(EFFECT_VERT, PRELUDE + "\n#line 1\n" + effect.fragment); } catch (e) { g.deleteProgram(bx); return { error: { reason: "shader", message: String((e as Error).message).replace(/\0/g, "").trim() } }; }
+  const fragOf = (f: string) => PRELUDE + "\n#line 1\n" + f;
+  let fx: WebGLProgram, bx: WebGLProgram, lm: WebGLProgram;
+  try { bx = program(BOX_VERT, BOX_FRAG); } catch (e) { return { error: { reason: "webgl", message: clean(e) } }; }
+  try { fx = program(EFFECT_VERT, fragOf(effect.fragment)); } catch (e) { g.deleteProgram(bx); return { error: { reason: "shader", message: clean(e) } }; }
+  // The loading material: yours, or the built-in when yours does not compile (reported as a warning).
+  let warning: GlError | undefined;
+  let matUniforms = loading.uniforms ?? {};
+  try { lm = program(EFFECT_VERT, fragOf(loading.fragment)); } catch (e) {
+    if (!loading.fallback) { g.deleteProgram(bx); g.deleteProgram(fx); return { error: { reason: "webgl", message: clean(e) } }; }
+    warning = { reason: "shader", message: clean(e) };
+    matUniforms = {};
+    try { lm = program(EFFECT_VERT, fragOf(loading.fallback)); } catch (e2) { g.deleteProgram(bx); g.deleteProgram(fx); return { error: { reason: "webgl", message: clean(e2) } }; }
+  }
 
   const buf = g.createBuffer();
   g.bindBuffer(g.ARRAY_BUFFER, buf);
@@ -105,86 +148,175 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     g.enableVertexAttribArray(loc);
     g.vertexAttribPointer(loc, 2, g.FLOAT, false, 0, 0);
   };
-  const names = ["uFrom", "uTo", "uProgress", "uResolution", "uFromSize", "uToSize", "uTime", "uDirection"];
-  const F: Record<string, WebGLUniformLocation | null> = {};
-  for (const n of [...names, ...Object.keys(effect.uniforms ?? {})]) F[n] = g.getUniformLocation(fx, n);
-  const B = { box: g.getUniformLocation(bx, "box"), view: g.getUniformLocation(bx, "view"), img: g.getUniformLocation(bx, "img"), asp: g.getUniformLocation(bx, "asp"), part: g.getUniformLocation(bx, "part"), size: g.getUniformLocation(bx, "size"), radius: g.getUniformLocation(bx, "radius"), alpha: g.getUniformLocation(bx, "alpha") };
+  const locs = (p: WebGLProgram, names: string[]) => {
+    const out: Record<string, WebGLUniformLocation | null> = {};
+    for (const n of names) out[n] = g.getUniformLocation(p, n);
+    return out;
+  };
+  const F = locs(fx, ["uFrom", "uTo", "uProgress", "uResolution", "uFromSize", "uToSize", "uTime", "uDirection", ...Object.keys(effect.uniforms ?? {})]);
+  const M = locs(lm, ["uPreview", "uNoise", "uHasPreview", "uTime", "uResolution", "uFailed", ...Object.keys(matUniforms)]);
+  const B = locs(bx, ["box", "view", "img", "noise", "asp", "part", "size", "radius", "alpha", "reveal"]);
+  // Your uniforms, set by kind: a number is a float, 2 to 4 numbers a vec2 to vec4; anything else is skipped.
+  const setUniforms = (L: Record<string, WebGLUniformLocation | null>, u: Record<string, UniformValue | number[]>) => {
+    for (const [k, v] of Object.entries(u)) {
+      const kind = uniformKind(v as UniformValue), loc = L[k];
+      if (!kind || !loc) continue;
+      if (kind === "1f") g.uniform1f(loc, v as number);
+      else if (kind === "2fv") g.uniform2fv(loc, v as number[]);
+      else if (kind === "3fv") g.uniform3fv(loc, v as number[]);
+      else g.uniform4fv(loc, v as number[]);
+    }
+  };
 
-  const texture = () => {
+  const texture = (wrap: number = g.CLAMP_TO_EDGE) => {
     const t = g.createTexture();
     g.bindTexture(g.TEXTURE_2D, t);
-    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
-    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, wrap);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, wrap);
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
     return t;
   };
+  // The noise tile the materials and the dissolve sample (it repeats, so it is a power of two).
+  const noiseTex = texture(g.REPEAT)!;
+  g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, NOISE, NOISE, 0, g.RGBA, g.UNSIGNED_BYTE, noiseBytes(NOISE));
 
   const maxSide = maxTextureSide(g);
+  const live = (i: number) => sources[i]?.live !== false;
 
   // Photos load with crossOrigin="anonymous": a cross-origin photo without CORS headers fails to load (it never
-  // taints the canvas), and the lightbox then switches to the CSS renderer and reports it. Each is decoded off the
-  // main thread before the upload, so the upload does not stall a frame with a JPEG decode.
+  // taints the canvas). Asked again without it, one that then loads was a CORS problem ("fallback": the lightbox
+  // switches to CSS and reports it); one that still fails did not load at all ("failed": the frame says so). Each
+  // is decoded off the main thread before the upload, so the upload does not stall a frame with a JPEG decode.
   const tex: (WebGLTexture | null)[] = srcs.map(() => null);
   const dims: ([number, number] | null)[] = srcs.map(() => null);
-  const loads = new Map<number, Promise<boolean>>();
-  const ready = (i: number): Promise<boolean> => {
-    if (i < 0 || i >= srcs.length) return Promise.resolve(false);
+  const loads = new Map<number, Promise<Loaded>>();
+  const ready = (i: number): Promise<Loaded> => {
+    if (i < 0 || i >= srcs.length) return Promise.resolve("failed");
     let p = loads.get(i);
     if (!p) {
-      p = new Promise<boolean>((resolve) => {
+      p = new Promise<Loaded>((resolve) => {
+        const s = sources[i];
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.decoding = "async";
         const upload = () => {
-          if (dead) { resolve(false); return; }
+          if (dead) { resolve("failed"); return; }
+          if (tex[i]) { resolve("ok"); return; }
           const t = texture();
           g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
           // Big originals are drawn down to the screen's size first (gl-fit.ts); a refused upload falls back to CSS.
-          if (!uploadPhoto(g, img, maxSide)) { g.deleteTexture(t); resolve(false); return; }
+          if (!uploadPhoto(g, img, maxSide)) { g.deleteTexture(t); resolve("fallback"); return; }
           tex[i] = t; dims[i] = [img.naturalWidth, Math.max(1, img.naturalHeight)];
-          resolve(true);
+          resolve("ok");
         };
-        img.onerror = () => resolve(false);
-        if (sources[i].srcset) { img.sizes = sources[i].sizes || "100vw"; img.srcset = sources[i].srcset!; }
+        const fail = () => {
+          if (!isCrossOrigin(s.src, location.href)) { resolve("failed"); return; }
+          const probe = new Image();
+          probe.onload = () => resolve("fallback");
+          probe.onerror = () => resolve("failed");
+          if (s.srcset) { probe.sizes = s.sizes || "100vw"; probe.srcset = s.srcset; }
+          probe.src = s.src;
+        };
+        img.onerror = fail;
+        if (s.srcset) { img.sizes = s.sizes || "100vw"; img.srcset = s.srcset; }
         img.src = srcs[i];
-        (typeof img.decode === "function" ? img.decode() : new Promise((r, j) => { img.onload = r; img.onerror = j; })).then(upload, () => resolve(false));
+        (typeof img.decode === "function" ? img.decode() : new Promise((r, j) => { img.onload = r; img.onerror = j; })).then(upload, () => { img.onerror = null; fail(); });
       });
       loads.set(i, p);
     }
     return p;
   };
-  // The neighbours of the current photo, uploaded one at a time when the browser is idle.
-  const prefetch = (i: number) => {
-    const { prev, next } = neighbours(i, srcs.length, ctx.loop);
-    for (const j of [next, prev]) if (j !== null && !loads.has(j)) idle(() => { if (!dead) void ready(j); });
+
+  // Previews: the placeholder or thumbnail, blurred small (gl-fit.ts) and cropped to the frame's shape. They give
+  // the frame its shape before the photo arrives, and the material something to draw on.
+  const pvTex: (WebGLTexture | null)[] = srcs.map(() => null);
+  const pvAsp: (number | null)[] = srcs.map(() => null);
+  const prevAsp: (number | null)[] = srcs.map(() => null);
+  const previews = new Map<number, Promise<void>>();
+  const preview = (i: number): Promise<void> => {
+    const url = sources[i]?.preview;
+    if (!url || !live(i)) return Promise.resolve();
+    let p = previews.get(i);
+    if (p) return p;
+    let done!: () => void;
+    p = new Promise<void>((r) => { done = r; });
+    previews.set(i, p);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.onerror = () => done();
+    img.onload = () => {
+      if (dead || !img.naturalWidth) { done(); return; }
+      pvAsp[i] = img.naturalWidth / Math.max(1, img.naturalHeight);
+      const c = previewCanvas(img, frameAspect({ given: sources[i].aspect, preview: pvAsp[i] }));
+      if (c) {
+        const t = texture();
+        g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        // A cross-origin preview without CORS headers taints the canvas and throws: then there is no preview.
+        try { g.texImage2D(g.TEXTURE_2D, 0, g.RGB, g.RGB, g.UNSIGNED_BYTE, c); pvTex[i] = t; } catch { g.deleteTexture(t); }
+      }
+      // The frame takes the preview's shape (unless the photo's own size is known already).
+      if (i === st.b && need[i]) { st.target = fitFor(i); poke(); }
+      done();
+    };
+    img.src = url;
+    return p;
   };
 
-  // The offscreen target for effects, the size of the canvas; each frame uses the box-sized corner of it.
+  // The neighbours of the current photo, uploaded one at a time when the browser is idle, or at once after a jump.
+  const prefetch = (i: number, now = false) => {
+    const { prev, next } = neighbours(i, srcs.length, ctx.loop);
+    for (const j of [next, prev]) {
+      if (j === null) continue;
+      preview(j);
+      if (loads.has(j)) continue;
+      if (now) void ready(j); else idle(() => { if (!dead) void ready(j); });
+    }
+  };
+
+  // The offscreen target for effects, the size of the canvas; each frame uses the box-sized corner of it. And two
+  // targets for the loading material (one is drawn each frame; the other keeps the last frame of the photo moved
+  // away from, so an effect can start from it).
   const target = texture();
   const fbo = g.createFramebuffer();
-  let vw = 1, vh = 1, dpr = 1, W = 1, H = 1;
+  const mats = [0, 1].map(() => ({ t: texture()!, f: g.createFramebuffer() }));
+  let vw = 1, vh = 1, dpr = 1, W = 1, H = 1, MW = 1, MH = 1;
+  const attach = (t: WebGLTexture, f: WebGLFramebuffer | null, w: number, h: number) => {
+    g.bindTexture(g.TEXTURE_2D, t);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, w, h, 0, g.RGBA, g.UNSIGNED_BYTE, null);
+    g.bindFramebuffer(g.FRAMEBUFFER, f);
+    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, t, 0);
+  };
   const resizeCanvas = () => {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     vw = canvas.clientWidth || window.innerWidth; vh = canvas.clientHeight || window.innerHeight;
     W = canvas.width = Math.round(vw * dpr); H = canvas.height = Math.round(vh * dpr);
-    g.bindTexture(g.TEXTURE_2D, target);
-    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, W, H, 0, g.RGBA, g.UNSIGNED_BYTE, null);
-    g.bindFramebuffer(g.FRAMEBUFFER, fbo);
-    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, target, 0);
+    // The material at one texel per CSS pixel at most: it is soft by nature, and this keeps it cheap on phones.
+    MW = Math.max(1, Math.min(MAT_MAX, Math.round(vw))); MH = Math.max(1, Math.min(MAT_MAX, Math.round(vh)));
+    attach(target!, fbo, W, H);
+    for (const m of mats) attach(m.t, m.f, MW, MH);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
   };
   resizeCanvas();
 
   // Layout is read once per resize, never during an animation frame.
   let area = ctx.area();
-  const aspect = (i: number) => (dims[i] ? dims[i]![0] / dims[i]![1] : 1.5);
+  const aspect = (i: number) => frameAspect({ natural: dims[i] ? dims[i]![0] / dims[i]![1] : null, given: sources[i]?.aspect, preview: pvAsp[i], previous: prevAsp[i] });
   const fitFor = (i: number): Box => containBox(aspect(i), area);
   const pitch = () => area.w + STRIP_GAP;
   const ease = easingFn(effect.easing);
   const t0 = performance.now();
 
   const st = { box: { x: 0, y: 0, w: 1, h: 1 } as Box, vel: [0, 0, 0, 0], target: { x: 0, y: 0, w: 1, h: 1 } as Box, a: 0, b: 0, mix: 0, dir: 1, swapAt: 0, plain: false, alpha: 1, fadeAt: 0, fadeOut: false, closing: false };
+  // The loading look: need[i] while photo i is drawn with its material (until its reveal ends); failed[i] once its
+  // load failed; revealAt when the current photo started dissolving in; loadAt when its loading began (the
+  // material's clock); cm the material target drawn this frame, and frozen the photo whose last material frame the
+  // other one keeps.
+  const need: boolean[] = srcs.map(() => false);
+  const failed: boolean[] = srcs.map(() => false);
+  let revealAt = 0, loadAt = 0, cm = 0, frozen = -1;
+  const turn = latest();
   const strip = { x: 0, v: 0, held: false };
   // A swipe that drives the effect: p runs 0 to pitch() px as the finger moves toward photo j (dir 1 next, -1
   // previous); on release it springs to goal (pitch: j becomes current, 0: back) with the finger's velocity.
@@ -200,14 +332,34 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
   let waiters: (() => void)[] = [];
   const swapMs = ctx.still ? FADE_MS : ctx.duration;
 
+  // Tell the lightbox how the photo on screen is doing (never for one moved away from).
+  const tell = (i: number, s: LoadStatus) => { if (!dead && i === st.b) ctx.status?.(i, s); };
+  // Photo i's load settled while it shows its loading look.
+  const landed = (i: number, r: Loaded) => {
+    if (dead || i !== st.b || !need[i]) return;
+    if (r === "ok") { st.target = fitFor(i); tell(i, "ready"); }
+    else if (r === "failed") { failed[i] = true; tell(i, "failed"); }
+    else tell(i, "fallback");
+    poke();
+  };
+  // Photo i becomes the one on screen while it is still loading.
+  const beginLoading = (i: number) => {
+    need[i] = true; revealAt = 0; loadAt = performance.now();
+    preview(i);
+    tell(i, "loading");
+    void ready(i).then((r) => landed(i, r));
+  };
+
   const coverAsp = (i: number, b: Box): [number, number] => {
     const ia = aspect(i), ba = b.w / Math.max(1, b.h);
     return ia > ba ? [ia / ba, 1] : [1, ba / ia];
   };
-  const drawBox = (t: WebGLTexture, b: Box, asp: [number, number], part: [number, number], radius: R4, alpha: number) => {
+  const drawBox = (t: WebGLTexture, b: Box, asp: [number, number], part: [number, number], radius: R4, alpha: number, reveal = 1) => {
     bind(bx);
     g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, t);
     g.uniform1i(B.img, 0);
+    if (reveal < 1) { g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, noiseTex); g.uniform1i(B.noise, 1); }
+    g.uniform1f(B.reveal, reveal);
     g.uniform2f(B.asp, asp[0], asp[1]);
     g.uniform2f(B.part, part[0], part[1]);
     g.uniform4f(B.box, b.x, b.y, b.w, b.h);
@@ -220,30 +372,54 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
   };
   const shift = (b: Box, dx: number): Box => ({ x: b.x + dx, y: b.y, w: b.w, h: b.h });
 
-  // The effect shader draws photos a then b at progress mix offscreen, and the result goes into the box.
-  const effectPass = (a: WebGLTexture, b: WebGLTexture, ia: number, ib: number, mix: number, dir: number, box: Box, radius: R4) => {
+  // The material for photo i into this frame's material target, stretched over the box (vUv spans the box).
+  const material = (i: number, box: Box, now: number): Face => {
+    const m = mats[cm];
+    bind(lm);
+    g.bindFramebuffer(g.FRAMEBUFFER, m.f);
+    g.viewport(0, 0, MW, MH);
+    g.disable(g.BLEND);
+    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, pvTex[i] ?? noiseTex);
+    g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, noiseTex);
+    g.uniform1i(M.uPreview, 0); g.uniform1i(M.uNoise, 1);
+    g.uniform1f(M.uHasPreview, pvTex[i] ? 1 : 0);
+    // Still with reduced motion; otherwise seconds since loading began, kept small for mediump.
+    g.uniform1f(M.uTime, ctx.still ? 0 : ((now - loadAt) / 1000) % 300);
+    g.uniform2f(M.uResolution, Math.max(1, box.w * dpr), Math.max(1, box.h * dpr));
+    g.uniform1f(M.uFailed, failed[i] ? 1 : 0);
+    setUniforms(M, matUniforms);
+    g.drawArrays(g.TRIANGLES, 0, 6);
+    g.bindFramebuffer(g.FRAMEBUFFER, null);
+    g.viewport(0, 0, W, H);
+    g.enable(g.BLEND);
+    return { t: m.t, size: [box.w, box.h], asp: [1, 1] };
+  };
+  const photo = (i: number, box: Box): Face | null => (tex[i] ? { t: tex[i]!, size: dims[i]!, asp: coverAsp(i, box) } : null);
+  // A loading photo in its box: the material, and the photo dissolving in over it once it is there.
+  const drawLoading = (i: number, box: Box, radius: R4, now: number) => {
+    const m = material(i, box, now);
+    drawBox(m.t, box, m.asp, [1, 1], radius, st.alpha);
+    if (!tex[i] || !revealAt) return;
+    const k = revealProgress(now - revealAt, ctx.still);
+    drawBox(tex[i]!, box, coverAsp(i, box), [1, 1], radius, st.alpha * (ctx.still ? k : 1), ctx.still ? 1 : k);
+  };
+
+  // The effect shader draws a then b at progress mix offscreen, and the result goes into the box.
+  const effectPass = (a: Face, b: Face, mix: number, dir: number, box: Box, radius: R4) => {
     const bw = Math.max(1, Math.min(W, Math.round(box.w * dpr))), bh = Math.max(1, Math.min(H, Math.round(box.h * dpr)));
     bind(fx);
     g.bindFramebuffer(g.FRAMEBUFFER, fbo);
     g.viewport(0, 0, bw, bh);
     g.disable(g.BLEND);
-    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, a);
-    g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, b);
+    g.activeTexture(g.TEXTURE0); g.bindTexture(g.TEXTURE_2D, a.t);
+    g.activeTexture(g.TEXTURE1); g.bindTexture(g.TEXTURE_2D, b.t);
     g.uniform1i(F.uFrom, 0); g.uniform1i(F.uTo, 1);
     g.uniform1f(F.uProgress, mix);
     g.uniform2f(F.uResolution, bw, bh);
-    const da = dims[ia] ?? dims[ib] ?? [1, 1], db = dims[ib] ?? da;
-    g.uniform2f(F.uFromSize, da[0], da[1]); g.uniform2f(F.uToSize, db[0], db[1]);
+    g.uniform2f(F.uFromSize, a.size[0], a.size[1]); g.uniform2f(F.uToSize, b.size[0], b.size[1]);
     g.uniform1f(F.uTime, (performance.now() - t0) / 1000);
     g.uniform1f(F.uDirection, dir);
-    for (const [k, v] of Object.entries(effect.uniforms ?? {})) {
-      const kind = uniformKind(v), loc = F[k];
-      if (!kind || !loc) continue;
-      if (kind === "1f") g.uniform1f(loc, v as number);
-      else if (kind === "2fv") g.uniform2fv(loc, v as number[]);
-      else if (kind === "3fv") g.uniform3fv(loc, v as number[]);
-      else g.uniform4fv(loc, v as number[]);
-    }
+    setUniforms(F, effect.uniforms ?? {});
     g.drawArrays(g.TRIANGLES, 0, 6);
     g.bindFramebuffer(g.FRAMEBUFFER, null);
     g.viewport(0, 0, W, H);
@@ -251,46 +427,56 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
     drawBox(target!, box, [1, 1], [bw / W, bh / H], radius, st.alpha);
   };
 
-  const draw = () => {
+  const draw = (now = performance.now()) => {
     g.bindFramebuffer(g.FRAMEBUFFER, null);
     g.viewport(0, 0, W, H);
     g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
     g.enable(g.BLEND); g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
     const radius = radiusAt(st.closing, st.box, st.target, ctx.rSpot(st.b), ctx.rOpen);
     // A swipe driving the effect: from the current photo toward j, the box easing between their shapes.
-    if (scrub.on && tex[st.b] && tex[scrub.j]) {
+    if (scrub.on && tex[st.b] && tex[scrub.j] && !need[st.b]) {
       const t = Math.min(1, Math.max(0, scrub.p / pitch()));
-      effectPass(tex[st.b]!, tex[scrub.j]!, st.b, scrub.j, t, scrub.dir, lerpBox(st.box, fitFor(scrub.j), t), ctx.rOpen);
+      const box = lerpBox(st.box, fitFor(scrub.j), t);
+      effectPass(photo(st.b, box)!, photo(scrub.j, box)!, t, scrub.dir, box, ctx.rOpen);
       return;
     }
-    // The neighbours, while the strip is off centre.
+    // The neighbours, while the strip is off centre (their preview while they load).
     if (strip.held || Math.abs(strip.x) > 0.5) {
       const { prev, next } = neighbours(st.b, srcs.length, ctx.loop);
       for (const [j, k] of [[prev, -1], [next, 1]] as const) {
-        const t = j === null ? null : tex[j];
-        if (j === null || !t) continue;
+        if (j === null) continue;
+        const t = tex[j] ?? pvTex[j];
+        if (!t) continue;
         const b = shift(fitFor(j), k * pitch() + strip.x);
         if (b.x > vw || b.x + b.w < 0) continue;
-        drawBox(t, b, coverAsp(j, b), [1, 1], ctx.rOpen, st.alpha);
+        drawBox(t, b, tex[j] ? coverAsp(j, b) : [1, 1], [1, 1], ctx.rOpen, st.alpha);
       }
     }
-    const a = tex[st.a] ?? tex[st.b], b = tex[st.b] ?? tex[st.a];
-    if (!a || !b) return;
     const box = shift(st.box, strip.x);
-    // At rest, or while the next photo is still loading (then the current one stays, with its own shape).
-    if (!st.swapAt) { const k = tex[st.b] ? st.b : st.a; drawBox(b, box, coverAsp(k, box), [1, 1], radius, st.alpha); return; }
-    // A plain crossfade (a video is involved): the old photo, then the new one over it, no effect pass.
-    if (st.plain) {
-      drawBox(a, box, coverAsp(st.a, box), [1, 1], radius, st.alpha);
-      drawBox(b, box, coverAsp(st.b, box), [1, 1], radius, st.alpha * st.mix);
+    // At rest: the photo, or its loading look. A video's poster still loading keeps the photo before it.
+    if (!st.swapAt) {
+      const k = need[st.b] || tex[st.b] ? st.b : st.a;
+      if (need[k]) drawLoading(k, box, radius, now);
+      else if (tex[k]) drawBox(tex[k]!, box, coverAsp(k, box), [1, 1], radius, st.alpha);
       return;
     }
-    // An effect is running: draw it offscreen, then into the box.
-    effectPass(a, b, st.a, st.b, st.mix, st.dir, box, radius);
+    // A change: to the photo, or to its material; from the photo, or the last frame of the material it had.
+    const to = need[st.b] ? material(st.b, box, now) : photo(st.b, box);
+    if (!to) return;
+    const from = photo(st.a, box) ?? (frozen === st.a ? { t: mats[cm ^ 1].t, size: [box.w, box.h] as [number, number], asp: [1, 1] as [number, number] } : to);
+    // A plain crossfade (a video is involved): the old picture, then the new one over it, no effect pass.
+    if (st.plain) {
+      drawBox(from.t, box, from.asp, [1, 1], radius, st.alpha);
+      drawBox(to.t, box, to.asp, [1, 1], radius, st.alpha * st.mix);
+      return;
+    }
+    effectPass(from, to, st.mix, st.dir, box, radius);
   };
+  const poke = () => { if (!dead && !raf) raf = requestAnimationFrame(frame); };
 
-  // One rAF loop draws the spring, the strip, the effect and any fade. Waiters resolve when it comes to rest.
-  const frame = () => {
+  // One rAF loop draws the spring, the strip, the effect, any fade and the loading look. Waiters resolve when the
+  // motion comes to rest; a loading material keeps the loop drawing (alive) without holding them up.
+  function frame() {
     const now = performance.now();
     const dt = Math.min(1 / 15, Math.max(0, (now - (last || now - 1000 / 60)) / 1000));
     last = now;
@@ -322,21 +508,28 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       const ms = st.plain ? Math.min(PLAIN_MS, swapMs || PLAIN_MS) : swapMs;
       const t = ms > 0 ? (now - st.swapAt) / ms : 1;
       st.mix = ease(Math.min(1, t));
-      if (t >= 1) { st.a = st.b; st.mix = 0; st.swapAt = 0; } else moving = true;
+      if (t >= 1) { st.a = st.b; st.mix = 0; st.swapAt = 0; frozen = -1; } else moving = true;
     }
     if (st.fadeAt) {
       const t = Math.min(1, (now - st.fadeAt) / FADE_MS);
       st.alpha = st.fadeOut ? 1 - t : t;
       if (t < 1) moving = true;
     }
-    draw();
-    if (moving) raf = requestAnimationFrame(frame);
-    else {
-      raf = 0; last = 0;
-      const w = waiters; waiters = [];
-      w.forEach((f) => f());
-    }
-  };
+    // The loading look: the photo dissolves in once it is there and the change has played; until then the
+    // material drifts (still with reduced motion, and once failed).
+    let alive = false;
+    const b = st.b;
+    if (need[b] && !st.swapAt) {
+      if (tex[b] && !failed[b]) {
+        if (!revealAt) revealAt = now;
+        if (revealProgress(now - revealAt, ctx.still) >= 1) { need[b] = false; revealAt = 0; } else alive = true;
+      } else if (!failed[b] && !ctx.still) alive = true;
+    } else if (need[b] && !failed[b] && !ctx.still) alive = true;
+    draw(now);
+    if (!moving) { const w = waiters; waiters = []; w.forEach((f) => f()); }
+    if (moving || alive) raf = requestAnimationFrame(frame);
+    else { raf = 0; last = 0; }
+  }
   const run = () => new Promise<void>((resolve) => {
     if (dead) { resolve(); return; }
     waiters.push(resolve);
@@ -344,12 +537,22 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
   });
 
   return {
+    warning,
     stage: {
       kind: "webgl",
       async open(i, from, started) {
         area = ctx.area();
-        if (!(await ready(i)) || dead) return false;
-        st.a = st.b = i;
+        const t = turn.take();
+        const r = ready(i), pv = preview(i);
+        // A photo in the cache opens straight away; any other springs open at once on its preview (given a frame
+        // or two for the preview, usually the tile's own picture, to give the frame its shape) with the loading
+        // look. Only one WebGL cannot use (CORS, a refused upload) goes to CSS.
+        let got = live(i) ? await Promise.race([r, sleep(LOAD_GRACE_MS)]) : await r;
+        if (got === "wait") { await Promise.race([pv, sleep(LOAD_GRACE_MS)]); got = await Promise.race([r, Promise.resolve("wait" as const)]); }
+        if (dead || !turn.is(t)) return !dead;
+        if (got === "fallback" || (got === "failed" && !live(i))) return false;
+        st.a = st.b = i; need[i] = false;
+        if (got !== "ok") beginLoading(i);
         st.target = fitFor(i);
         if (ctx.still || !from) { st.box = { ...st.target }; st.alpha = 0; st.fadeAt = performance.now(); }
         else st.box = { ...from };
@@ -361,17 +564,46 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       },
       async show(i, dir, plain) {
         endScrub();
-        // The effect's clock starts once photo i is on the GPU: a photo still loading would otherwise use up the
-        // effect while it waits, and only its last moments would show. Until then the current photo stays.
-        st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = 0; st.plain = !!plain;
-        const p = run();
-        if (!(await ready(i)) || dead) return false;
-        if (st.b !== i) return true;
-        st.swapAt = performance.now();
+        const t = turn.take();
+        // A photo that failed before is asked for again.
+        if (failed[i]) { failed[i] = false; loads.delete(i); }
+        const r = ready(i);
+        preview(i);
+        prefetch(i, true);
+        if (!live(i)) {
+          // A video's poster: the effect's clock starts once it is on the GPU (until then the picture stays).
+          st.a = st.swapAt ? st.b : st.a; st.b = i; st.dir = dir; st.mix = 0; st.swapAt = 0; st.plain = !!plain; need[i] = false;
+          const p = run();
+          if ((await r) !== "ok" || dead) return false;
+          if (st.b !== i || !turn.is(t)) return true;
+          st.swapAt = performance.now();
+          st.target = fitFor(i);
+          await Promise.all([p, run()]);
+          return true;
+        }
+        // A photo in the cache lands within a frame or two and changes straight to it; any other moves at once to
+        // its preview with the loading look.
+        await Promise.race([r, sleep(LOAD_GRACE_MS)]);
+        if (dead || !turn.is(t)) return true;
+        const onScreen = st.swapAt ? st.b : st.a;
+        // Keep the last material frame of a photo moved away from while loading, for the change to start from.
+        if (need[onScreen] && !tex[onScreen]) { cm ^= 1; frozen = onScreen; } else frozen = -1;
+        if (!dims[i] && !sources[i].aspect && !pvAsp[i]) prevAsp[i] = aspect(onScreen);
+        st.a = onScreen; st.b = i; st.dir = dir; st.mix = 0; st.plain = !!plain;
+        need[onScreen] = need[onScreen] && !tex[onScreen];
+        need[i] = false;
+        if (!tex[i]) beginLoading(i);
         st.target = fitFor(i);
-        await Promise.all([p, run()]);
-        prefetch(i);
+        st.swapAt = performance.now();
+        await run();
         return true;
+      },
+      retry(i) {
+        if (dead || i !== st.b || !failed[i]) return;
+        failed[i] = false;
+        loads.delete(i);
+        beginLoading(i);
+        poke();
       },
       async close(to) {
         held = false; strip.held = false;
@@ -405,7 +637,7 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
         if (scrub.on && !scrub.held) endScrub();
         const nb = neighbours(st.b, srcs.length, ctx.loop);
         const j = x < 0 ? nb.next : x > 0 ? nb.prev : null;
-        if (ctx.swipeFx && !ctx.still && !plain && j !== null && tex[j] && tex[st.b] && strip.x === 0 && !strip.held) {
+        if (ctx.swipeFx && !ctx.still && !plain && j !== null && tex[j] && tex[st.b] && !need[st.b] && strip.x === 0 && !strip.held) {
           st.a = st.b; st.swapAt = 0; st.mix = 0;
           scrub.on = true; scrub.held = true; scrub.j = j; scrub.dir = x < 0 ? 1 : -1; scrub.p = Math.min(pitch(), Math.abs(x)); scrub.v = 0;
           if (!raf) raf = requestAnimationFrame(frame);
@@ -427,6 +659,7 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
           }
           scrub.goal = dir !== 0 ? pitch() : 0;
           scrub.v = -vx * scrub.dir;
+          if (dir !== 0) turn.take();
           await run();
           if (dir !== 0) prefetch(st.b);
           return;
@@ -438,17 +671,20 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
           const j = dir > 0 ? next : prev;
           if (j !== null) {
             // The neighbour becomes current; the strip is re-based so nothing moves on screen.
-            st.a = st.b = j; st.mix = 0; st.swapAt = 0;
+            turn.take();
+            if (!dims[j] && !sources[j].aspect && !pvAsp[j]) prevAsp[j] = aspect(st.b);
+            st.a = st.b = j; st.mix = 0; st.swapAt = 0; frozen = -1; need[j] = false;
+            if (failed[j]) { failed[j] = false; loads.delete(j); }
+            if (!tex[j] && live(j)) beginLoading(j); else void ready(j);
             st.target = fitFor(j); st.box = { ...st.target }; st.vel = [0, 0, 0, 0];
             strip.x += dir * pitch();
-            void ready(j);
           }
         }
         await run();
         if (dir !== 0) prefetch(st.b);
       },
-      rect() { return dims[st.b] ? fitFor(st.b) : null; },
-      current() { return dims[st.b] ? { ...st.box } : null; },
+      rect() { return dims[st.b] || need[st.b] ? fitFor(st.b) : null; },
+      current() { return dims[st.b] && !need[st.b] ? { ...st.box } : null; },
       place(box) {
         if (dead) return;
         held = true;
@@ -466,22 +702,20 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
         cancelAnimationFrame(raf); raf = 0;
         const w = waiters; waiters = []; w.forEach((f) => f());
         tex.forEach((t) => t && g.deleteTexture(t));
+        pvTex.forEach((t) => t && g.deleteTexture(t));
+        for (const m of mats) { g.deleteTexture(m.t); g.deleteFramebuffer(m.f); }
+        g.deleteTexture(noiseTex);
         g.deleteTexture(target); g.deleteFramebuffer(fbo); g.deleteBuffer(buf);
         shaders.forEach((s) => g.deleteShader(s));
-        g.deleteProgram(fx); g.deleteProgram(bx);
+        g.deleteProgram(fx); g.deleteProgram(bx); g.deleteProgram(lm);
       },
     },
   };
 }
 
 let probe: WebGLRenderingContext | null | undefined;
-/**
- * Compile an effect's fragment shader without opening anything. Returns null when it compiles, else the
- * compiler's message (line numbers count from the first line of your shader). Null too when there is no WebGL
- * to check with.
- */
-export function checkEffect(effect: Effect | string): string | null {
-  const fragment = typeof effect === "string" ? effect : effect.fragment;
+/** Compile a fragment shader (with the effect macros) against the shared vertex shader: null, or the message. */
+function checkFragment(fragment: string): string | null {
   if (probe === undefined) {
     try { probe = document.createElement("canvas").getContext("webgl") as WebGLRenderingContext | null; } catch { probe = null; }
   }
@@ -504,4 +738,18 @@ export function checkEffect(effect: Effect | string): string | null {
   }
   g.deleteShader(v.s); g.deleteShader(f.s);
   return log;
+}
+
+/**
+ * Compile an effect's fragment shader without opening anything. Returns null when it compiles, else the
+ * compiler's message (line numbers count from the first line of your shader). Null too when there is no WebGL
+ * to check with.
+ */
+export function checkEffect(effect: Effect | string): string | null {
+  return checkFragment(typeof effect === "string" ? effect : effect.fragment);
+}
+
+/** The same for a loading shader: null when it compiles, else the compiler's message. */
+export function checkLoading(shader: LoadingShader | string): string | null {
+  return checkFragment(typeof shader === "string" ? shader : shader.fragment);
 }
