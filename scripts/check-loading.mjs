@@ -71,7 +71,11 @@ try {
     const open = async (photos, o = {}) => {
       await page.evaluate(([photos, r, o]) => { window.__ev.length = 0; window.__lb?.destroy(); window.__lb = window.__m.unfurl({ photos, renderer: r, effect: "fade", ...o }); }, [photos, renderer, o]);
       await page.waitForFunction(() => window.__ev.some(([n]) => n === "open-end"), null, { timeout: 8000 });
+      // A photo that opened with its loading look: wait for it to arrive and settle.
+      await page.waitForFunction(() => !window.__ev.some(([n]) => n === "load-start") || window.__ev.some(([n]) => n === "load-end"), null, { timeout: 8000 });
       await page.waitForTimeout(400);
+      if (await page.evaluate(() => window.__ev.some(([n]) => n === "load-start"))) await page.waitForTimeout(900);
+      await page.evaluate(() => { window.__ev = window.__ev.filter(([n]) => n === "error"); });
     };
     const tag = () => `r${++run}`;
     const names = ["h17", "h38", "h21", "h30"];
@@ -160,7 +164,100 @@ try {
       check(dist(await mean(), ref[2]) < 10, "webgl: and the photo shows there");
     }
 
+    // 7. Opening on a slow photo: it springs open at once on its preview, the ring comes late, the photo arrives.
+    const tile = async () => page.evaluate(() => {
+      document.querySelector("#fk-tile")?.remove();
+      const im = document.createElement("img");
+      im.id = "fk-tile"; im.src = "photos/h21-800.jpg"; im.style.cssText = "position:fixed;left:40px;top:40px;width:180px;height:120px;object-fit:cover";
+      document.body.append(im);
+      return im.decode();
+    });
+    await tile();
+    t = tag();
+    await page.evaluate(([r, t]) => { window.__ev.length = 0; window.__lb?.destroy(); window.__lb = window.__m.unfurl({ photos: [{ src: `photos/h21-800.jpg?${t}&slow=3000`, thumb: "photos/h21-800.jpg" }, "photos/h17-800.jpg"], renderer: r, origin: () => document.querySelector("#fk-tile") }); }, [renderer, t]);
+    await page.waitForTimeout(100);
+    check(!(await ring()) && (await page.evaluate(() => document.querySelector("#fk-tile").style.visibility === "hidden")), `${renderer}: a slow open starts at once (tile lifted), no ring yet`);
+    await page.waitForFunction(() => window.__ev.some(([n]) => n === "open-end"), null, { timeout: 2000 }).then(() => check(true, `${renderer}: the slow open finishes its spring before the photo arrives`), () => check(false, `${renderer}: the slow open finishes its spring before the photo arrives`));
+    await page.waitForTimeout(300);
+    check(await ring(), `${renderer}: the ring shows on a slow open`);
+    await page.waitForFunction(() => window.__ev.some(([n, d]) => n === "load-end" && d.ok), null, { timeout: 8000 });
+    await page.waitForTimeout(1200);
+    check(dist(await mean(), ref[2]) < 10 && !(await ring()), `${renderer}: the photo arrives in place after a slow open`);
+
+    // 8. Opening on a photo that fails: the failed frame and Retry, in this renderer.
+    healed = false;
+    t = tag();
+    await page.evaluate(([r, t]) => { window.__ev.length = 0; window.__lb?.destroy(); window.__lb = window.__m.unfurl({ photos: [{ src: `photos/h21-800.jpg?${t}&fail=1`, thumb: "photos/h21-800.jpg" }, "photos/h17-800.jpg"], renderer: r, origin: () => document.querySelector("#fk-tile") }); }, [renderer, t]);
+    await page.waitForFunction(() => window.__ev.some(([n]) => n === "error"), null, { timeout: 8000 });
+    await page.waitForTimeout(500);
+    const fo = await page.evaluate(() => ({ vis: getComputedStyle(document.querySelector(".fk-unfurl-fail")).display !== "none", r: window.__lb.renderer, err: window.__ev.filter(([n]) => n === "error").map(([, d]) => `${d.reason}/${d.fallback}`) }));
+    check(fo.vis && fo.r === renderer && JSON.stringify(fo.err) === JSON.stringify(["load/none"]), `${renderer}: a failed open shows the frame and Retry (${fo.r}, ${fo.err.join(", ")})`);
+    await page.evaluate(() => fetch("/__heal"));
+    await page.click(".fk-unfurl-retry");
+    await page.waitForFunction(() => window.__ev.some(([n, d]) => n === "load-end" && d.ok), null, { timeout: 8000 });
+    await page.waitForTimeout(1200);
+    check(dist(await mean(), ref[2]) < 10, `${renderer}: Retry after a failed open brings the photo`);
+
+    // 9. Opening on a photo in the cache: the spring as before, never the ring.
+    await page.evaluate((r) => { window.__ev.length = 0; window.__lb?.destroy(); window.__lb = window.__m.unfurl({ photos: [{ src: "photos/h21-800.jpg", thumb: "photos/h21-800.jpg" }, "photos/h17-800.jpg"], renderer: r, origin: () => document.querySelector("#fk-tile") }); }, renderer);
+    rang = false;
+    for (let k = 0; k < 8; k++) { await page.waitForTimeout(100); rang ||= await ring(); }
+    check(!rang && (await page.evaluate(() => !window.__ev.some(([n]) => n === "load-start"))), `${renderer}: a cached open never shows the ring`);
+    await page.evaluate(() => { window.__lb.destroy(); document.querySelector("#fk-tile").remove(); });
+
     check(!errors.length, `${renderer}: no page errors${errors.length ? " (" + errors.join("; ") + ")" : ""}`);
+    await page.close();
+  }
+  // 10. frost and liquid come with frankaa/loading; without it the name is reported and the film is used. (A
+  // fresh page: the site's own page imports frankaa/loading.)
+  {
+    const page = await browser.newPage();
+    await page.goto(`${base}/llms.txt`);
+    const r = await page.evaluate(async () => {
+      const m = await import("/lib/index.js");
+      const ev = [];
+      document.addEventListener("frankaa:error", (e) => ev.push(e.detail.message));
+      const go = async (loading) => { const u = m.unfurl({ photos: ["/photos/h17-800.jpg", "/photos/h38-800.jpg"], renderer: "webgl", loading }); await new Promise((r) => setTimeout(r, 600)); u.destroy(); };
+      await go("frost");
+      const before = ev.slice();
+      await import("/lib/loading.js");
+      await go("liquid");
+      return { before, after: ev.slice(before.length) };
+    });
+    check(r.before.length === 1 && r.before[0].includes('import "frankaa/loading"'), `"frost" without frankaa/loading is reported (${r.before[0]})`);
+    check(r.after.length === 0, `after import "frankaa/loading", "liquid" compiles without an error`);
+    await page.close();
+  }
+
+  // 11. The site's Loading demo: its service worker slows and fails the photos; the ring, the reveal and Retry.
+  for (const renderer of ["webgl", "css"]) {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.goto(`${base}/index.html`, { waitUntil: "networkidle" });
+    await page.evaluate(() => { window.__ev = []; for (const n of ["load-start", "load-end", "error", "close-end"]) document.addEventListener("frankaa:" + n, (e) => window.__ev.push([n, e.detail])); });
+    if (renderer === "css") await page.check('input[name="renderer"][value="css"]');
+    await page.locator("#loading").scrollIntoViewIfNeeded();
+    await page.click("#load-grid .tile >> nth=1");
+    await page.waitForFunction(() => window.__ev.some(([n]) => n === "load-start"), null, { timeout: 8000 });
+    await page.waitForTimeout(700);
+    check(await page.evaluate(() => document.querySelector(".fk-unfurl-load")?.dataset.ring === "spin"), `site ${renderer}: Slow 2s shows the ring`);
+    await page.screenshot({ path: `${process.env.SHOTS || "/tmp"}/site-${renderer}-slow.png` }).catch(() => {});
+    await page.waitForFunction(() => window.__ev.some(([n, d]) => n === "load-end" && d.ok), null, { timeout: 8000 });
+    await page.waitForTimeout(1200);
+    check(await page.evaluate(() => document.querySelector(".fk-unfurl-load").hidden), `site ${renderer}: the photo arrives and the ring goes`);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__ev.some(([n]) => n === "close-end"), null, { timeout: 8000 });
+    await page.evaluate(() => { window.__ev.length = 0; });
+    await page.check("#load-fail");
+    await page.click("#load-grid .tile >> nth=2");
+    await page.waitForFunction(() => window.__ev.some(([n]) => n === "error"), null, { timeout: 10000 });
+    await page.waitForTimeout(300);
+    check(await page.evaluate(() => getComputedStyle(document.querySelector(".fk-unfurl-fail")).display !== "none"), `site ${renderer}: Make it fail shows the message and Retry`);
+    await page.click(".fk-unfurl-retry");
+    await page.waitForFunction(() => window.__ev.some(([n, d]) => n === "load-end" && d.ok), null, { timeout: 10000 });
+    check(true, `site ${renderer}: Retry brings the photo`);
+    check(!errors.length, `site ${renderer}: no page errors${errors.length ? " (" + errors.join("; ") + ")" : ""}`);
     await page.close();
   }
 } finally {
