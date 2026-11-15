@@ -233,16 +233,21 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
   const pvTex: (WebGLTexture | null)[] = srcs.map(() => null);
   const pvAsp: (number | null)[] = srcs.map(() => null);
   const prevAsp: (number | null)[] = srcs.map(() => null);
-  const previews = new Set<number>();
-  const preview = (i: number) => {
+  const previews = new Map<number, Promise<void>>();
+  const preview = (i: number): Promise<void> => {
     const url = sources[i]?.preview;
-    if (!url || previews.has(i) || !live(i)) return;
-    previews.add(i);
+    if (!url || !live(i)) return Promise.resolve();
+    let p = previews.get(i);
+    if (p) return p;
+    let done!: () => void;
+    p = new Promise<void>((r) => { done = r; });
+    previews.set(i, p);
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.decoding = "async";
+    img.onerror = () => done();
     img.onload = () => {
-      if (dead || !img.naturalWidth) return;
+      if (dead || !img.naturalWidth) { done(); return; }
       pvAsp[i] = img.naturalWidth / Math.max(1, img.naturalHeight);
       const c = previewCanvas(img, frameAspect({ given: sources[i].aspect, preview: pvAsp[i] }));
       if (c) {
@@ -253,8 +258,10 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       }
       // The frame takes the preview's shape (unless the photo's own size is known already).
       if (i === st.b && need[i]) { st.target = fitFor(i); poke(); }
+      done();
     };
     img.src = url;
+    return p;
   };
 
   // The neighbours of the current photo, uploaded one at a time when the browser is idle, or at once after a jump.
@@ -535,9 +542,17 @@ export function createGlStage(canvas: HTMLCanvasElement, sources: GlSource[], ef
       kind: "webgl",
       async open(i, from, started) {
         area = ctx.area();
-        preview(i);
-        if ((await ready(i)) !== "ok" || dead) return false;
+        const t = turn.take();
+        const r = ready(i), pv = preview(i);
+        // A photo in the cache opens straight away; any other springs open at once on its preview (given a frame
+        // or two for the preview, usually the tile's own picture, to give the frame its shape) with the loading
+        // look. Only one WebGL cannot use (CORS, a refused upload) goes to CSS.
+        let got = live(i) ? await Promise.race([r, sleep(LOAD_GRACE_MS)]) : await r;
+        if (got === "wait") { await Promise.race([pv, sleep(LOAD_GRACE_MS)]); got = await Promise.race([r, Promise.resolve("wait" as const)]); }
+        if (dead || !turn.is(t)) return !dead;
+        if (got === "fallback" || (got === "failed" && !live(i))) return false;
         st.a = st.b = i; need[i] = false;
+        if (got !== "ok") beginLoading(i);
         st.target = fitFor(i);
         if (ctx.still || !from) { st.box = { ...st.target }; st.alpha = 0; st.fadeAt = performance.now(); }
         else st.box = { ...from };

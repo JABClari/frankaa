@@ -237,15 +237,16 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
       area = ctx.area();
       const t = turn.take();
       const l = layer(i);
-      const ok = await l.ready;
-      if (dead || !turn.is(t)) return ok;
-      if (!ok && !live(i)) return false;
+      // A photo in the cache opens straight away; any other springs open at once with its loading film (and one
+      // that did not load opens as its frame, which says so and offers to try again). A video's poster waits.
+      if (!live(i)) { if (!(await l.ready)) return false; }
+      else await Promise.race([l.ready, sleep(LOAD_GRACE_MS)]);
+      if (dead || !turn.is(t)) return !dead;
       attach(l, false);
       cur = l;
-      lastAspect = l.aspect;
+      if (l.state === "ok") lastAspect = l.aspect;
       started?.();
-      // A photo that did not load opens as its frame, which says so (and offers to try again).
-      if (!ok) { l.shown = true; film$(l); from = null; }
+      showing(l);
       if (ctx.still || !from) {
         sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0];
         await fade(l.frame, [{ opacity: 0, transform: ctx.still ? "none" : "scale(.96)" }, { opacity: 1, transform: "none" }], ctx.still ? FADE_MS : 220);
@@ -256,7 +257,7 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
         await run();
       }
       prefetch(i);
-      return ok;
+      return true;
     },
     rect() { return cur ? { ...cur.rest } : null; },
     current() { return cur && cur.state === "ok" && !cur.shown ? { ...sp.box } : null; },
