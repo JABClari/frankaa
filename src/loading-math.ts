@@ -15,14 +15,16 @@ export type LoadingShader = {
 export type LoadingState = { index: number; failed: boolean; retry: () => void };
 /** Your own loading view, drawn in a host laid over the photo's box (any renderer). Return a function to tidy up. */
 export type LoadingRender = (host: HTMLElement, state: LoadingState) => (() => void) | void;
-export type LoadingMaterial = "film" | "frost" | "liquid" | "none";
+/** A loading material by name: "film" and "none" are built in; "frost" and "liquid" come with frankaa/loading;
+ *  registerLoading adds your own. */
+export type LoadingMaterial = "film" | "frost" | "liquid" | "none" | (string & {});
 export type LoadingOption = LoadingMaterial | LoadingShader | LoadingRender;
 
 /** The loading option read into what each part needs: the built-in material, your shader, or your view. */
 export function loadingKind(o: LoadingOption | undefined): { material: LoadingMaterial; shader?: LoadingShader; render?: LoadingRender } {
   if (typeof o === "function") return { material: "none", render: o };
   if (o && typeof o === "object" && typeof o.fragment === "string") return { material: "film", shader: o };
-  if (o === "frost" || o === "liquid" || o === "none" || o === "film") return { material: o };
+  if (typeof o === "string" && o) return { material: o };
   return { material: "film" };
 }
 

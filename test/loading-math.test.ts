@@ -3,12 +3,13 @@ import { isColor, previewOf } from "../src/items.ts";
 import assert from "node:assert/strict";
 import { frameAspect, givenAspect, latest, loadingDelay, loadingKind, loadingView, noiseBytes, revealProgress, LOAD_GRACE_MS } from "../src/loading-math.ts";
 
-test("loadingKind reads names, shaders and views; anything else is the film", () => {
+test("loadingKind reads names (looked up in the registry later), shaders and views; nothing is the film", () => {
   assert.deepEqual(loadingKind(undefined), { material: "film" });
   assert.deepEqual(loadingKind("frost"), { material: "frost" });
   assert.deepEqual(loadingKind("liquid"), { material: "liquid" });
   assert.deepEqual(loadingKind("none"), { material: "none" });
-  assert.deepEqual(loadingKind("nope" as never), { material: "film" });
+  assert.deepEqual(loadingKind("nope"), { material: "nope" });
+  assert.deepEqual(loadingKind("" as never), { material: "film" });
   const shader = { fragment: "void main() {}" };
   assert.deepEqual(loadingKind(shader), { material: "film", shader });
   const render = () => {};

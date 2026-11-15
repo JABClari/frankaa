@@ -15,10 +15,10 @@ import type { Drumline, DrumlineOptions } from "./drumline";
 import { drumlineLook, stripOptions, type DrumlinePreset } from "./drumline-math";
 import { readArgs, fullSrc, previewOf, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
 import { givenAspect, loadingDelay, loadingKind, type LoadingMaterial, type LoadingOption, type LoadingRender, type LoadingShader, type LoadingState } from "./loading-math";
-import { materialShader } from "./loading-shaders";
+import { loadingNames, materialShader, registerLoading } from "./loading-shaders";
 import { loadingUi } from "./loading-ui";
 
-export { supported, checkEffect, checkLoading, registerEffect, effectNames };
+export { supported, checkEffect, checkLoading, registerEffect, effectNames, registerLoading, loadingNames };
 export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider, LoadingMaterial, LoadingOption, LoadingRender, LoadingShader, LoadingState };
 export { embedUrl };
 
@@ -109,9 +109,9 @@ export type UnfurlOptions = UnfurlHooks & {
   /** The effect between photos: a built-in or registered name, or your own { fragment, uniforms, duration, easing }.
    *  Default "displacement". The CSS renderer shows each as a fade, slide, zoom or cut. */
   effect?: EffectName | (string & {}) | Effect;
-  /** What a photo shows while it loads, over its blurred placeholder or thumbnail: "film" (default, an iridescent
-   *  sheen), "frost" (etched glass and a slow band of light), "liquid" (a glossy flow), "none" (just the blurred
-   *  preview); your own material as { fragment, uniforms } (WebGL); or your own view, (host, { index, failed,
+  /** What a photo shows while it opens or moves before it has loaded, over its blurred placeholder or thumbnail:
+   *  "film" (default, an iridescent sheen), "none" (just the blurred preview), "frost" and "liquid" after
+   *  import "frankaa/loading" (or any name given to registerLoading); your own material as { fragment, uniforms } (WebGL); or your own view, (host, { index, failed,
    *  retry }) => cleanup, laid over the photo's box in either renderer. The CSS renderer draws the film without the
    *  photo. The photo dissolves in, in place, when it arrives. */
   loading?: LoadingOption;
@@ -325,11 +325,18 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       return { x: b.x + pl, y: b.y + pt, w: b.w, h: b.h };
     },
   };
+  // A material name nothing registered (frost and liquid need import "frankaa/loading"): say so; the film is used.
+  if (!look.shader && !materialShader(look.material)) {
+    const name = look.material;
+    queueMicrotask(() => emit("onError", { index, src: imageOf(photos[index]), reason: "shader", fallback: "none", message: `no loading material named "${name}"${name === "frost" || name === "liquid" ? ' (import "frankaa/loading" first)' : ""}; the film is used` } satisfies UnfurlError));
+  }
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
   let stage: Stage | null = null;
   if (wantGl) {
     // Your loading shader, or the built-in material (yours falls back to the built-in film when it does not compile).
-    const mat = look.shader ? { fragment: look.shader.fragment, uniforms: look.shader.uniforms, fallback: materialShader("film") } : { fragment: materialShader(look.material) };
+    const film = materialShader("film")!.fragment;
+    const named = materialShader(look.material) ?? materialShader("film")!;
+    const mat = look.shader ? { fragment: look.shader.fragment, uniforms: look.shader.uniforms, fallback: film } : { fragment: named.fragment, uniforms: named.uniforms, fallback: film };
     const built = createGlStage(canvas, photos.map(sourceOf), effect, ctx, mat);
     if (built.stage) {
       stage = built.stage;
@@ -355,17 +362,16 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   let fellBack = -1;
   const fallBack = async (i: number, during = false) => {
     const s = useCss();
-    if (during) {
-      fellBack = i; loadView.clear();
-      await s.show(i, 1, true);
-      // Shown straight away (the photo was in the cache): no load status will come, so tell it now.
-      if (fellBack === i && loadView.phase === "idle") { fellBack = -1; emit("onError", { index: i, src: imageOf(photos[i]), reason: "cors", fallback: "css" } satisfies UnfurlError); }
-      placeLoad();
-      return true;
+    fellBack = i; loadView.clear();
+    const ok = during ? await s.show(i, 1, true) : await s.open(i, null, () => hide(i));
+    // Shown straight away (the photo was in the cache), or a video's poster: no load status will come, so tell it
+    // now. Otherwise the status tells it once the photo has loaded or not.
+    if (fellBack === i && loadView.phase === "idle") {
+      fellBack = -1;
+      emit("onError", { index: i, src: imageOf(photos[i]), reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
+      if (!ok) failed(i);
     }
-    const ok = await s.open(i, null, () => hide(i));
-    emit("onError", { index: i, src: imageOf(photos[i]), reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
-    if (!ok) failed(i);
+    placeLoad();
     return ok;
   };
   // A photo did not load: say so (the frame shows the message and Retry) and report it, as before.
@@ -525,6 +531,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     animEnd("open", index);
     emit("onOpenEnd", { index, renderer: stage!.kind });
     showMedia();
+    placeLoad();
   })();
 
   // Re-fit when the window or the visual viewport changes (Safari's toolbars, rotation); the photo springs there.

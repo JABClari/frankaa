@@ -15,7 +15,8 @@
   "type": "module",
   "sideEffects": [
     "*.css",
-    "./dist/chunks/*.js"
+    "./dist/chunks/*.js",
+    "./dist/loading.js"
   ],
   "exports": {
     ".": {
@@ -33,6 +34,10 @@
     "./drumline": {
       "types": "./dist/drumline.d.ts",
       "import": "./dist/drumline.js"
+    },
+    "./loading": {
+      "types": "./dist/loading.d.ts",
+      "import": "./dist/loading.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",
