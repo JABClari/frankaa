@@ -1,6 +1,7 @@
 // Small DOM helpers. No innerHTML anywhere: elements and icons are built node by node, so the package works
 // under a strict CSP with Trusted Types.
 import { eventName } from "./shared";
+import { isColor } from "./items";
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, attrs: Record<string, string> = {}): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -54,6 +55,6 @@ export type Icons = Partial<{ next: string; prev: string; close: string; play: s
 export function placeholderStyle(el: HTMLElement, value: string | undefined): void {
   if (!value) return;
   const v = value.trim();
-  if (/^(#|rgb|hsl|hwb|lab|lch|oklab|oklch|color\(|var\()/i.test(v) || /^[a-z]+$/i.test(v)) el.style.backgroundColor = v;
+  if (isColor(v)) el.style.backgroundColor = v;
   else el.style.backgroundImage = `url(${JSON.stringify(v)})`;
 }
