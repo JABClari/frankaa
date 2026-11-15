@@ -3,8 +3,8 @@
 // CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
 // If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
 // says so through onError, so nothing fails silently.
-import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
-import { checkEffect, createGlStage, supported } from "./lightbox-gl";
+import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type LoadStatus, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { checkEffect, checkLoading, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
@@ -13,10 +13,13 @@ import { embedUrl, type MediaProvider } from "./media";
 import { videoPlayer, type VideoLabels, type VideoPlayer } from "./video";
 import type { Drumline, DrumlineOptions } from "./drumline";
 import { drumlineLook, stripOptions, type DrumlinePreset } from "./drumline-math";
-import { readArgs, fullSrc, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
+import { readArgs, fullSrc, previewOf, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
+import { givenAspect, loadingDelay, loadingKind, type LoadingMaterial, type LoadingOption, type LoadingRender, type LoadingShader, type LoadingState } from "./loading-math";
+import { materialShader } from "./loading-shaders";
+import { loadingUi } from "./loading-ui";
 
-export { supported, checkEffect, registerEffect, effectNames };
-export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider };
+export { supported, checkEffect, checkLoading, registerEffect, effectNames };
+export type { Effect, EffectName, CssTransition, Easing, UniformValue, RendererPref, ReducedMotion, MediaProvider, LoadingMaterial, LoadingOption, LoadingRender, LoadingShader, LoadingState };
 export { embedUrl };
 
 /** The shared item format (see items.ts): images and videos, the same list for every part. */
@@ -49,11 +52,18 @@ export type UnfurlLabels = {
   play: string;
   /** The visible counter. {n}, {total}. Default "{n} / {total}". */
   counter: string;
+  /** Read out when a photo is still loading after loadingDelay. {n}. Default "Loading photo {n}". */
+  loading: string;
+  /** Shown in the frame of a photo that did not load. Default "This photo didn't load". */
+  failed: string;
+  /** The button that asks for it again. Default "Retry". */
+  retry: string;
 } & Omit<VideoLabels, "play">;
-export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}", pause: "Pause video", mute: "Mute", unmute: "Unmute", seek: "Seek", volume: "Volume", fullscreen: "Full screen", exitFullscreen: "Exit full screen", timeOf: "{time} of {duration}" };
+export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}", loading: "Loading photo {n}", failed: "This photo didn't load", retry: "Retry", pause: "Pause video", mute: "Mute", unmute: "Unmute", seek: "Seek", volume: "Volume", fullscreen: "Full screen", exitFullscreen: "Exit full screen", timeOf: "{time} of {duration}" };
 
 /** cors: a cross-origin photo without CORS headers; load: the photo did not load; webgl: no WebGL (only when
- *  renderer is "webgl"); shader: the effect did not compile (message has the log). */
+ *  renderer is "webgl"); shader: the effect did not compile (fallback "css"), or your loading shader did not
+ *  (fallback "none": the built-in film is used; message has the log). */
 export type UnfurlError = { index: number; src: string; reason: "cors" | "load" | "webgl" | "shader" | "media"; fallback: "css" | "none"; message?: string };
 /** Why the lightbox closed: the person or close() ("close"), or destroy() ("destroy"). */
 export type CloseReason = "close" | "destroy";
@@ -69,6 +79,10 @@ export type UnfurlHooks = {
   /** cancelled is true when destroy() cut the animation short. */
   onAnimationEnd?: (d: { type: AnimationType; index: number; cancelled?: boolean }) => void;
   onError?: (d: UnfurlError) => void;
+  /** A photo is on screen with its loading look (it was not ready when it was moved to, or Retry was pressed). */
+  onLoadStart?: (d: { index: number }) => void;
+  /** That photo arrived (ok) or did not load (ok false; onError fires too). */
+  onLoadEnd?: (d: { index: number; ok: boolean }) => void;
 };
 
 export type UnfurlOptions = UnfurlHooks & {
@@ -95,6 +109,14 @@ export type UnfurlOptions = UnfurlHooks & {
   /** The effect between photos: a built-in or registered name, or your own { fragment, uniforms, duration, easing }.
    *  Default "displacement". The CSS renderer shows each as a fade, slide, zoom or cut. */
   effect?: EffectName | (string & {}) | Effect;
+  /** What a photo shows while it loads, over its blurred placeholder or thumbnail: "film" (default, an iridescent
+   *  sheen), "frost" (etched glass and a slow band of light), "liquid" (a glossy flow), "none" (just the blurred
+   *  preview); your own material as { fragment, uniforms } (WebGL); or your own view, (host, { index, failed,
+   *  retry }) => cleanup, laid over the photo's box in either renderer. The CSS renderer draws the film without the
+   *  photo. The photo dissolves in, in place, when it arrives. */
+  loading?: LoadingOption;
+  /** Wait this long (ms) before the ring and the "Loading photo" label, so fast loads never show them. Default 250. */
+  loadingDelay?: number;
   /** "auto" (default) uses WebGL where it is there, else CSS. "css" never touches WebGL. */
   renderer?: RendererPref;
   /** What a sideways swipe does with WebGL: "effect" (default) runs the effect under the finger, its progress
@@ -157,7 +179,10 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const isVideo = isVideoItem;
   const imageOf = fullSrc;
   // srcset describes src; with a separate full file the lightbox uses that alone.
-  const sourceOf = (p: Item) => (isVideo(p) ? { src: fullSrc(p) } : p.full ? { src: p.full, placeholder: p.placeholder } : { src: p.src, srcset: p.srcset, sizes: p.sizes, placeholder: p.placeholder });
+  // The preview is what stands in while it loads (the placeholder image, else the thumbnail); videos keep none.
+  const sourceOf = (p: Item) => (isVideo(p)
+    ? { src: fullSrc(p), live: false }
+    : { ...(p.full ? { src: p.full } : { src: p.src, srcset: p.srcset, sizes: p.sizes }), placeholder: p.placeholder, preview: previewOf(p, fullSrc(p)), aspect: givenAspect(p.width, p.height) });
   const ic = options.icons ?? {};
   const n = photos.length;
   const L: UnfurlLabels = { ...UNFURL_LABELS, ...(options.label ? { dialog: options.label } : {}), ...options.labels };
@@ -231,6 +256,19 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   };
   label();
 
+  // The loading view over the photo's box (ring, the "didn't load" message, your own view).
+  const look = loadingKind(options.loading);
+  const loadView = loadingUi({
+    labels: L, delay: loadingDelay(options.loadingDelay), render: look.render,
+    say: (t) => { if (announce) status.textContent = t; },
+    arrived: () => label(),
+    retry: (i) => {
+      if (loadView.el.contains(document.activeElement)) closeBtn.focus({ preventScroll: true });
+      stage?.retry(i);
+    },
+  });
+  root.insertBefore(loadView.el, top);
+
   const spot = (i: number): { box: Box | null; el: HTMLElement | null } => {
     const o = options.origin?.(i) ?? null;
     if (!o) return { box: null, el: null };
@@ -273,6 +311,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     still,
     rSpot: (i: number) => toR4(typeof options.radius === "function" ? options.radius(i) : options.radius, 16),
     rOpen: toR4(options.openRadius, 12), duration: effect.duration ?? 480, count: n, loop, swipeFx: options.swipe !== "strip",
+    status: (i, s) => onStatus(i, s),
     // The room the photo may use: the overlay's own box (100dvh, so it follows Safari's toolbars) less the safe
     // areas, which the overlay carries as padding.
     area: () => {
@@ -289,8 +328,14 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const wantGl = pickRenderer(options.renderer, true) === "webgl";
   let stage: Stage | null = null;
   if (wantGl) {
-    const built = createGlStage(canvas, photos.map(sourceOf), effect, ctx);
-    if (built.stage) stage = built.stage;
+    // Your loading shader, or the built-in material (yours falls back to the built-in film when it does not compile).
+    const mat = look.shader ? { fragment: look.shader.fragment, uniforms: look.shader.uniforms, fallback: materialShader("film") } : { fragment: materialShader(look.material) };
+    const built = createGlStage(canvas, photos.map(sourceOf), effect, ctx, mat);
+    if (built.stage) {
+      stage = built.stage;
+      const w = built.warning;
+      if (w) queueMicrotask(() => emit("onError", { index, src: imageOf(photos[index]), reason: "shader", fallback: "none", message: w.message } satisfies UnfurlError));
+    }
     // A shader that does not compile is always reported; missing WebGL only when WebGL was asked for by name.
     else if (built.error.reason === "shader" || options.renderer === "webgl") {
       const err = built.error;
@@ -299,18 +344,53 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   }
   const useCss = () => {
     stage?.destroy();
-    stage = createCssStage(cssHost, photos.map(sourceOf), effect.css ?? "fade", ctx);
+    stage = createCssStage(cssHost, photos.map(sourceOf), effect.css ?? "fade", ctx, look.material !== "none");
     root.dataset.renderer = "css";
     return stage;
   };
   if (!stage) useCss(); else root.dataset.renderer = "webgl";
 
-  // WebGL could not draw photo i: tell the caller, switch to CSS, and show it there without the spring.
-  const fallBack = async (i: number) => {
+  // WebGL could not draw photo i: tell the caller, switch to CSS, and show it there without the spring. Mid-move
+  // (during), CSS takes over the move with its loading look; the error is told once the photo has loaded or not.
+  let fellBack = -1;
+  const fallBack = async (i: number, during = false) => {
     const s = useCss();
+    if (during) {
+      fellBack = i; loadView.clear();
+      await s.show(i, 1, true);
+      // Shown straight away (the photo was in the cache): no load status will come, so tell it now.
+      if (fellBack === i && loadView.phase === "idle") { fellBack = -1; emit("onError", { index: i, src: imageOf(photos[i]), reason: "cors", fallback: "css" } satisfies UnfurlError); }
+      placeLoad();
+      return true;
+    }
     const ok = await s.open(i, null, () => hide(i));
     emit("onError", { index: i, src: imageOf(photos[i]), reason: ok ? "cors" : "load", fallback: ok ? "css" : "none" } satisfies UnfurlError);
+    if (!ok) failed(i);
     return ok;
+  };
+  // A photo did not load: say so (the frame shows the message and Retry) and report it, as before.
+  const failed = (i: number) => {
+    loadView.set(i, "loading");
+    loadView.set(i, "failed");
+    placeLoad();
+    emit("onLoadEnd", { index: i, ok: false });
+  };
+  // How the photo on screen is loading, from the renderer.
+  const onStatus = (i: number, s: LoadStatus) => {
+    if (phase === "closed" || phase === "closing") return;
+    if (s === "fallback") { if (stage?.kind === "webgl" && i === index) void fallBack(i, true); return; }
+    if (i !== index) return;
+    if (fellBack === i && s !== "loading") {
+      fellBack = -1;
+      if (s === "ready") emit("onError", { index: i, src: imageOf(photos[i]), reason: "cors", fallback: "css" } satisfies UnfurlError);
+    }
+    loadView.set(i, s);
+    if (s === "loading") { placeLoad(); emit("onLoadStart", { index: i }); }
+    else if (s === "ready") emit("onLoadEnd", { index: i, ok: true });
+    else {
+      emit("onError", { index: i, src: imageOf(photos[i]), reason: "load", fallback: "none" } satisfies UnfurlError);
+      emit("onLoadEnd", { index: i, ok: false });
+    }
   };
 
   // ---------- Video slides: a play button over the poster, the player only after a tap ----------
@@ -326,12 +406,15 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     media.replaceChildren();
     media.hidden = true;
   };
-  const placeMedia = () => {
+  // Lay a node over the photo's open box (the video player, the loading view).
+  const placeOver = (node: HTMLElement) => {
     const r = stage?.rect();
     if (!r) return false;
-    Object.assign(media.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: ctx.rOpen.map((x) => `${x}px`).join(" ") });
+    Object.assign(node.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderRadius: ctx.rOpen.map((x) => `${x}px`).join(" ") });
     return true;
   };
+  const placeMedia = () => placeOver(media);
+  function placeLoad() { if (loadView.phase !== "idle") placeOver(loadView.el); }
   const showMedia = () => {
     const p = photos[index];
     if (!isVideo(p) || mediaFor === index || phase !== "open") return;
@@ -436,7 +519,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     let ok = await s.open(index, from, () => hide(index));
     if (phase === "closed") return;
     if (!ok && s.kind === "webgl") ok = await fallBack(index);
-    else if (!ok) emit("onError", { index, src: imageOf(photos[index]), reason: "load", fallback: "none" } satisfies UnfurlError);
+    else if (!ok) { emit("onError", { index, src: imageOf(photos[index]), reason: "load", fallback: "none" } satisfies UnfurlError); failed(index); }
     if (phase !== "opening") { animEnd("open", index); return; }
     setPhase("open");
     animEnd("open", index);
@@ -446,7 +529,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
 
   // Re-fit when the window or the visual viewport changes (Safari's toolbars, rotation); the photo springs there.
   let fitFrame = 0;
-  const onResize = () => { cancelAnimationFrame(fitFrame); fitFrame = requestAnimationFrame(() => { stage?.resize(); if (!media.hidden) placeMedia(); }); };
+  const onResize = () => { cancelAnimationFrame(fitFrame); fitFrame = requestAnimationFrame(() => { stage?.resize(); if (!media.hidden) placeMedia(); placeLoad(); }); };
   window.addEventListener("resize", onResize);
   window.visualViewport?.addEventListener("resize", onResize);
 
@@ -459,6 +542,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     const from = index, d = dir ?? (next > from ? 1 : -1);
     const plain = isVideo(photos[from]) || isVideo(photos[next]);
     hideMedia();
+    loadView.clear();
     root.dataset.zoomed = "false";
     if (how !== "strip") filmstrip?.go(next);
     index = next;
@@ -471,7 +555,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       if (!ok && phase !== "closed" && s.kind === "webgl" && stage === s) await fallBack(next);
       else if (!ok && phase !== "closed") emit("onError", { index: next, src: imageOf(photos[next]), reason: "load", fallback: "none" } satisfies UnfurlError);
       animEnd("change", next);
-      if (phase === "open" && index === next) showMedia();
+      if (phase === "open" && index === next) { showMedia(); placeLoad(); }
     });
   };
   const move = (d: 1 | -1, how: MoveHow) => show(index + d, how, d);
@@ -481,6 +565,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     if (phase === "closing" || phase === "closed") return;
     setPhase("closing");
     hideMedia();
+    loadView.clear();
     emit("onCloseStart", { index, reason: "close" });
     animStart("close", index);
     void stage!.close(spot(index).box).then(() => {
@@ -495,6 +580,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     setPhase("closed");
     cancelTap();
     hideMedia();
+    loadView.destroy();
     try { cleanupControls?.(); } catch (e) { setTimeout(() => { throw e; }); }
     window.removeEventListener("resize", onResize);
     window.visualViewport?.removeEventListener("resize", onResize);
@@ -556,7 +642,8 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   // and the photo always covers the view.
   const zoomOn = options.zoom !== false;
   const zoomMax = typeof options.zoom === "object" && options.zoom.max ? Math.max(1.5, options.zoom.max) : 4;
-  const canZoom = () => zoomOn && !isVideo(photos[index]) && phase === "open";
+  // A photo still loading (or failed) does not zoom.
+  const canZoom = () => zoomOn && !isVideo(photos[index]) && phase === "open" && (loadView.phase === "idle" || loadView.phase === "ready");
   const view = (): Box => ({ x: 0, y: 0, w: window.innerWidth, h: window.innerHeight });
   const zoomedNow = () => isZoomed(stage?.current() ?? null, stage?.rect() ?? null);
   const zoomTo = (box: Box, v = { vx: 0, vy: 0 }) => {
@@ -592,9 +679,10 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const slide = (dir: -1 | 0 | 1, vx: number) => {
     stripW = 0;
     const s = stage!;
-    if (dir === 0) { void s.settle(0, vx).then(() => { if (phase === "open") showMedia(); }); return; }
+    if (dir === 0) { void s.settle(0, vx).then(() => { if (phase === "open") { showMedia(); placeLoad(); } }); return; }
     const from = index, next = neighbours(index, n, loop)[dir > 0 ? "next" : "prev"]!;
     hideMedia();
+    loadView.clear();
     index = next;
     label();
     hide(next);
@@ -602,7 +690,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     emit("onChange", { index: next, from, how: "swipe" }, next, { index: next, from, how: "swipe" });
     filmstrip?.go(next);
     animStart("change", next);
-    void s.settle(dir, vx).then(() => { animEnd("change", next); if (phase === "open" && index === next) showMedia(); });
+    void s.settle(dir, vx).then(() => { animEnd("change", next); if (phase === "open" && index === next) { showMedia(); placeLoad(); } });
   };
   // Abandon a one-finger drag (a second finger arrived): put things back as they were.
   const dropDrag = () => {
@@ -610,7 +698,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     drag = null;
     if (!d) return;
     bg.style.transition = ""; bg.style.opacity = "";
-    delete root.dataset.swiping;
+    delete root.dataset.swiping; delete root.dataset.pulling;
     if (d.axis === "x") stage?.settle(0, 0);
     else if (d.axis === "y") stage?.release({ vx: 0, vy: 0 });
   };
@@ -680,6 +768,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     } else {
       const p = pull(dy);
       hideMedia();
+      root.dataset.pulling = "true";
       stage.track({ x: dx * 0.5, y: dy > 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p });
       bg.style.transition = "none";
       bg.style.opacity = String(1 - p * 0.75);
@@ -723,7 +812,7 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
     const v = e.timeStamp - lastMove.t > 100 ? { vx: 0, vy: 0 } : velocity(d.samples);
     bg.style.transition = "";
     bg.style.opacity = "";
-    delete root.dataset.swiping;
+    delete root.dataset.swiping; delete root.dataset.pulling;
     if (d.axis === "pan") {
       if (Math.hypot(dx, dy) < 6 && !cancelled) { onTap(e.clientX, e.clientY, e.timeStamp); return; }
       // Momentum: project where the pan would coast to, keep it covering the view, and spring there.

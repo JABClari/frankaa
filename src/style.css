@@ -27,12 +27,16 @@
   --fk-backdrop-blur: 8px;
   --fk-button-bg: rgba(255, 255, 255, .12);
   --fk-button-bg-hover: rgba(255, 255, 255, .2);
+  /* Loading: the frame's neutral base and the ring. */
+  --fk-load-base: #1b1d20;
+  --fk-ring: rgba(255, 255, 255, .92);
+  --fk-ring-track: rgba(255, 255, 255, .22);
 }
 
 .fk-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Buttons we draw: reset what a site's button {} rule may have set. */
-.fk-arrow, .fk-play, .fk-unfurl-btn, .fk-unfurl-action, .fk-unfurl-play { box-sizing: border-box; margin: 0; min-width: 0; min-height: 0; -webkit-appearance: none; appearance: none; font: inherit; line-height: 1; letter-spacing: normal; text-transform: none; text-shadow: none; }
+.fk-arrow, .fk-play, .fk-unfurl-btn, .fk-unfurl-action, .fk-unfurl-play, .fk-unfurl-retry { box-sizing: border-box; margin: 0; min-width: 0; min-height: 0; -webkit-appearance: none; appearance: none; font: inherit; line-height: 1; letter-spacing: normal; text-transform: none; text-shadow: none; }
 .fk-arrow svg, .fk-play svg, .fk-unfurl-btn svg, .fk-unfurl-play svg { display: block; width: auto; height: auto; flex: none; }
 
 /* ---------- procession ---------- */
@@ -87,6 +91,42 @@
 .fk-unfurl-frame { position: absolute; overflow: hidden; transform-origin: 0 0; backface-visibility: hidden; background-position: center; background-size: cover; }
 .fk-unfurl-img { display: block; width: 100%; max-width: none; height: 100%; margin: 0; object-fit: cover; transform-origin: 50% 50%; user-select: none; -webkit-user-drag: none; }
 .fk-unfurl[data-renderer="css"] .fk-unfurl-gl { display: none; }
+/* Loading (CSS renderer): the frame keeps the photo's shape on a neutral base, an iridescent film drifting over it
+   (transform only), and the photo fades in over it when it arrives. */
+.fk-unfurl-frame[data-load] { background-color: var(--fk-load-base); }
+.fk-unfurl-frame[data-load="loading"] .fk-unfurl-img, .fk-unfurl-frame[data-load="failed"] .fk-unfurl-img { opacity: 0; }
+.fk-unfurl-mat ~ .fk-unfurl-img { position: relative; }
+.fk-unfurl-mat { position: absolute; inset: 0; overflow: hidden; pointer-events: none; background: linear-gradient(160deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, .12)); transition: opacity .3s var(--fk-ease); }
+.fk-unfurl-mat::before, .fk-unfurl-mat::after { content: ""; position: absolute; inset: -50%; will-change: transform; }
+.fk-unfurl-mat::before { background: linear-gradient(115deg, rgba(255, 120, 210, 0) 8%, rgba(255, 120, 210, .26) 22%, rgba(120, 170, 255, .26) 36%, rgba(90, 230, 210, .22) 50%, rgba(250, 225, 120, .24) 64%, rgba(255, 120, 210, .22) 78%, rgba(255, 120, 210, 0) 92%); animation: fk-film 9s ease-in-out infinite alternate; }
+.fk-unfurl-mat::after { background: radial-gradient(40% 32% at 35% 40%, rgba(150, 120, 255, .22), transparent 70%), radial-gradient(36% 30% at 68% 62%, rgba(80, 220, 240, .18), transparent 70%); animation: fk-film-2 12s ease-in-out infinite alternate; }
+@keyframes fk-film { from { transform: translate3d(-12%, -6%, 0) rotate(-8deg); } to { transform: translate3d(12%, 6%, 0) rotate(10deg); } }
+@keyframes fk-film-2 { from { transform: translate3d(8%, -10%, 0) scale(1); } to { transform: translate3d(-10%, 8%, 0) scale(1.15); } }
+.fk-unfurl-frame[data-load="failed"] .fk-unfurl-mat { opacity: .45; }
+.fk-unfurl-frame[data-load="failed"] .fk-unfurl-mat::before, .fk-unfurl-frame[data-load="failed"] .fk-unfurl-mat::after { animation-play-state: paused; }
+.fk-unfurl[data-motion="reduced"] .fk-unfurl-mat::before, .fk-unfurl[data-motion="reduced"] .fk-unfurl-mat::after { animation: none; }
+/* The loading view over the photo's box: a ring that comes in late and completes, or the failed message. */
+.fk-unfurl-load { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; transition: opacity .16s var(--fk-ease); }
+.fk-unfurl-load[hidden] { display: none; }
+.fk-unfurl[data-swiping] .fk-unfurl-load, .fk-unfurl[data-pulling] .fk-unfurl-load, .fk-unfurl[data-zoomed="true"] .fk-unfurl-load, .fk-unfurl[data-phase="closing"] .fk-unfurl-load { opacity: 0; }
+.fk-unfurl-ring { position: absolute; right: 12px; bottom: 12px; width: 26px; height: 26px; opacity: 0; transform: scale(.85); filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .45)); transition: opacity .25s var(--fk-ease), transform .35s cubic-bezier(.2, .9, .3, 1.2); }
+.fk-unfurl-ring svg { display: block; width: 100%; height: 100%; }
+.fk-unfurl-ring-track { stroke: var(--fk-ring-track); }
+.fk-unfurl-ring-arc { stroke: var(--fk-ring); stroke-linecap: round; stroke-dasharray: 14 57; transform-origin: 50% 50%; animation: fk-spin 1s linear infinite; transition: stroke-dasharray .45s cubic-bezier(.3, .7, .2, 1); }
+.fk-unfurl-load[data-ring="spin"] .fk-unfurl-ring { opacity: 1; transform: scale(1); }
+.fk-unfurl-load[data-ring="done"] .fk-unfurl-ring { opacity: 0; transform: scale(1); transition: opacity .3s var(--fk-ease) .35s; }
+.fk-unfurl-load[data-ring="done"] .fk-unfurl-ring-arc { animation: none; stroke-dasharray: 57 57; }
+@keyframes fk-spin { to { transform: rotate(360deg); } }
+.fk-unfurl[data-motion="reduced"] .fk-unfurl-ring-arc { animation-duration: 2.4s; }
+.fk-unfurl-fail { position: absolute; inset: 0; display: none; place-content: center; justify-items: center; gap: 10px; padding: 16px; box-sizing: border-box; text-align: center; color: #fff; }
+.fk-unfurl-load[data-state="failed"] .fk-unfurl-fail { display: grid; pointer-events: auto; }
+.fk-unfurl-fail-msg { margin: 0; font: var(--fk-font); font-size: 14px; font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, .4); }
+.fk-unfurl-retry { height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--fk-button-bg); color: #fff; font: var(--fk-font); font-weight: 600; cursor: pointer; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: background-color .16s var(--fk-ease), transform .16s var(--fk-ease); }
+.fk-unfurl-retry:active { transform: scale(var(--fk-press-scale)); }
+@media (hover: hover) and (pointer: fine) { .fk-unfurl-retry:hover { background: var(--fk-button-bg-hover); } }
+.fk-unfurl-retry:focus-visible { outline: var(--fk-focus-width) solid var(--fk-focus-dark); outline-offset: 2px; }
+.fk-unfurl-load-host { position: absolute; inset: 0; pointer-events: auto; }
+.fk-unfurl-load-host[hidden] { display: none; }
 .fk-unfurl[data-zoomed="true"] { cursor: grab; }
 .fk-unfurl-top { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); display: flex; align-items: center; gap: 8px; z-index: 1; }
 .fk-unfurl-n { flex: 1; color: rgba(255, 255, 255, .8); font-variant-numeric: tabular-nums; padding-left: 8px; }
@@ -174,6 +214,8 @@
 .fk-unfurl[data-motion="reduced"] *, .fk-procession[data-motion="reduced"] * { transition-duration: 0s; }
 @media (prefers-reduced-motion: reduce) {
   .fk-unfurl-bg { animation-duration: .15s; }
+  .fk-unfurl-mat::before, .fk-unfurl-mat::after { animation: none; }
+  .fk-unfurl-ring-arc { animation-duration: 2.4s; }
   .fk-dot, .fk-arrow, .fk-play, .fk-unfurl-btn, .fk-zoomable .fk-photo { transition: none; }
 }
 
