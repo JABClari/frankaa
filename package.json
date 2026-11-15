@@ -59,7 +59,8 @@
     "check:perf": "node scripts/check-perf.mjs",
     "pretest": "npm run build",
     "check:features": "node scripts/check-features.mjs",
-    "check:drumline": "node scripts/check-drumline.mjs"
+    "check:drumline": "node scripts/check-drumline.mjs",
+    "check:loading": "node scripts/check-loading.mjs"
   },
   "keywords": [
     "slider",
