@@ -23,8 +23,8 @@ const server = createServer(async (req, res) => {
   if (!path.startsWith(root)) { res.writeHead(403).end(); return; }
   if (u.searchParams.has("fail") && !healed) { res.writeHead(404).end(); return; }
   // Capped, like docs/sw-slow.js: a test delay is never longer than 10 s.
-  const slow = Math.min(10_000, Math.max(0, Number(u.searchParams.get("slow")) || 0));
-  if (slow) await new Promise((r) => setTimeout(r, slow));
+  const slow = Number(u.searchParams.get("slow")) || 0;
+  if (slow > 0 && slow <= 10_000) await new Promise((r) => setTimeout(r, slow));
   try {
     const body = await readFile(path.endsWith("/") ? join(path, "index.html") : path);
     res.writeHead(200, { "content-type": types[extname(path)] || "application/octet-stream", "cache-control": "no-store" }).end(body);
