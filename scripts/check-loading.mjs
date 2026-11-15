@@ -16,15 +16,16 @@ const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 const root = fileURLToPath(new URL("../docs/", import.meta.url));
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".txt": "text/plain" };
 let healed = false;
+const DELAYS = new Map([500, 1200, 1500, 2500, 3000, 5000].map((ms) => [String(ms), ms]));
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__heal") { healed = true; res.writeHead(204).end(); return; }
   const path = normalize(join(root, decodeURIComponent(u.pathname)));
   if (!path.startsWith(root)) { res.writeHead(403).end(); return; }
   if (u.searchParams.has("fail") && !healed) { res.writeHead(404).end(); return; }
-  // Capped, like docs/sw-slow.js: a test delay is never longer than 10 s.
-  const slow = Number(u.searchParams.get("slow")) || 0;
-  if (slow > 0 && slow <= 10_000) await new Promise((r) => setTimeout(r, slow));
+  // Only the delays these checks use: a request can pick one, never set its own.
+  const slow = DELAYS.get(u.searchParams.get("slow") ?? "") ?? 0;
+  if (slow) await new Promise((r) => setTimeout(r, slow));
   try {
     const body = await readFile(path.endsWith("/") ? join(path, "index.html") : path);
     res.writeHead(200, { "content-type": types[extname(path)] || "application/octet-stream", "cache-control": "no-store" }).end(body);
