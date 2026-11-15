@@ -3,46 +3,78 @@
 // - One spring moves the current photo (open, close, pull down); another moves the strip of photos sideways
 //   while swiping, with the neighbours beside it.
 // - Photos are decoded (img.decode()) before they are shown, and the neighbours are loaded and decoded ahead.
+// - A move never waits for the next photo: its layer exists at once, in the photo's shape, and while the photo
+//   loads it shows the loading film (a CSS sheen on a neutral frame, transform-only) under it; the photo then fades
+//   in, in place. Only the latest move ever changes the picture.
 // - Layout is read only when a layer is placed or the window resizes, never inside an animation frame, and
 //   will-change is set only while something moves.
-import { containBox, draggedBox, flipFrame, neighbours, radiusAt, stepBox, stripStep, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx } from "./lightbox-math";
+import { containBox, draggedBox, flipFrame, neighbours, radiusAt, stepBox, stripStep, STRIP_GAP, SPRING_CLOSE, SPRING_OPEN, type Box, type R4, type Stage, type StageCtx, type StageSource } from "./lightbox-math";
 import type { CssTransition } from "./effects";
 import { el, placeholderStyle } from "./dom";
+import { LOAD_GRACE_MS, REVEAL_MS, REVEAL_STILL_MS, frameAspect, latest } from "./loading-math";
 
 const FADE_MS = 160;
 const UI_MAX_MS = 300;
 const EASE_OUT = "cubic-bezier(.23, 1, .32, 1)";
 
-type Layer = { i: number; frame: HTMLDivElement; img: HTMLImageElement; rest: Box; aspect: number };
+/** state: loading, ok or failed. shown: drawn on screen while loading (so it fades in when it arrives). */
+type Layer = { i: number; frame: HTMLDivElement; img: HTMLImageElement; rest: Box; aspect: number; state: "loading" | "ok" | "failed"; ready: Promise<boolean>; shown: boolean; preview: number | null };
 
-export type CssSource = { src: string; srcset?: string; sizes?: string; placeholder?: string };
+export type CssSource = StageSource;
 
-export function createCssStage(host: HTMLElement, srcs: CssSource[], transition: CssTransition, ctx: StageCtx): Stage {
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** film: draw the loading film (false for "none" and for your own loading view, which draws its own). */
+export function createCssStage(host: HTMLElement, srcs: CssSource[], transition: CssTransition, ctx: StageCtx, film = true): Stage {
   let cur: Layer | null = null;
-  let token = 0;
+  const turn = latest();
   let dead = false;
   let area = ctx.area();
+  // The shape of the last photo shown: a photo with nothing else to go by takes it while it loads.
+  let lastAspect = 1.5;
   const pitch = () => area.w + STRIP_GAP;
+  const live = (i: number) => srcs[i]?.live !== false;
 
-  // ---------- Layers: loaded and decoded once, kept, attached only when near ----------
-  const layers = new Map<number, Promise<Layer | null>>();
-  const layer = (i: number): Promise<Layer | null> => {
-    let p = layers.get(i);
-    if (!p) {
-      p = new Promise<Layer | null>((resolve) => {
-        const frame = el("div", "fk-unfurl-frame");
-        const img = el("img", "fk-unfurl-img", { alt: "", decoding: "async", draggable: "false" });
-        frame.append(img);
-        placeholderStyle(frame, srcs[i].placeholder);
-        if (srcs[i].srcset) { img.sizes = srcs[i].sizes || "100vw"; img.srcset = srcs[i].srcset!; }
-        img.src = srcs[i].src;
-        const done = () => resolve({ i, frame, img, aspect: img.naturalWidth / Math.max(1, img.naturalHeight) || 1.5, rest: { x: 0, y: 0, w: 1, h: 1 } });
-        const wait = typeof img.decode === "function" ? img.decode() : new Promise<void>((r, j) => { img.onload = () => r(); img.onerror = j; });
-        wait.then(done, () => (img.complete && img.naturalWidth ? done() : resolve(null)));
-      });
-      layers.set(i, p);
+  // ---------- Layers: made at once, loaded and decoded once, kept, attached only when near ----------
+  const layers = new Map<number, Layer>();
+  const load = (l: Layer) => {
+    const s = srcs[l.i];
+    const img = el("img", "fk-unfurl-img", { alt: "", decoding: "async", draggable: "false" });
+    if (l.img) l.img.replaceWith(img); else l.frame.append(img);
+    l.img = img;
+    l.state = "loading";
+    if (live(l.i)) l.frame.dataset.load = "loading";
+    if (s.srcset) { img.sizes = s.sizes || "100vw"; img.srcset = s.srcset; }
+    img.src = s.src;
+    l.ready = new Promise<boolean>((resolve) => {
+      const done = () => { l.aspect = img.naturalWidth / Math.max(1, img.naturalHeight) || l.aspect; l.state = "ok"; resolve(true); };
+      const wait = typeof img.decode === "function" ? img.decode() : new Promise<void>((r, j) => { img.onload = () => r(); img.onerror = j; });
+      wait.then(done, () => { if (img.complete && img.naturalWidth) done(); else { l.state = "failed"; resolve(false); } });
+    });
+    void l.ready.then((ok) => { if (l.img === img) landed(l, ok); });
+  };
+  const layer = (i: number): Layer => {
+    let l = layers.get(i);
+    if (l) return l;
+    const s = srcs[i];
+    const frame = el("div", "fk-unfurl-frame");
+    placeholderStyle(frame, s.placeholder);
+    l = { i, frame, img: null as unknown as HTMLImageElement, rest: { x: 0, y: 0, w: 1, h: 1 }, aspect: frameAspect({ given: s.aspect, previous: lastAspect }), state: "loading", ready: Promise.resolve(false), shown: false, preview: null };
+    layers.set(i, l);
+    // The preview gives the frame its shape when the photo's own size is not given (usually from the cache).
+    if (s.preview && !s.aspect && live(i)) {
+      const p = new Image();
+      const got = () => {
+        const L = l!;
+        L.preview = p.naturalWidth / Math.max(1, p.naturalHeight);
+        if (L.state !== "ok") { L.aspect = L.preview; if (L.frame.isConnected) refit(L); }
+      };
+      p.onload = got;
+      p.src = s.preview;
+      if (p.complete && p.naturalWidth) { p.onload = null; l.preview = p.naturalWidth / Math.max(1, p.naturalHeight); l.aspect = l.preview; }
     }
-    return p;
+    load(l);
+    return l;
   };
   const place = (l: Layer) => {
     l.rest = containBox(l.aspect, area);
@@ -51,26 +83,54 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
     s.borderRadius = css(ctx.rOpen);
   };
   const css = (r: R4, sx = 1, sy = 1) => `${r[0] / sx}px ${r[1] / sx}px ${r[2] / sx}px ${r[3] / sx}px / ${r[0] / sy}px ${r[1] / sy}px ${r[2] / sy}px ${r[3] / sy}px`;
+  // The loading film sits under the photo inside the frame (added only while the photo is loading or failed).
+  const film$ = (l: Layer) => {
+    if (!film || l.frame.querySelector(".fk-unfurl-mat")) return;
+    l.frame.prepend(el("div", "fk-unfurl-mat", { "aria-hidden": "true" }));
+  };
   const attach = (l: Layer, hidden: boolean) => {
     if (!l.frame.isConnected) host.append(l.frame);
+    if (l.state !== "ok" && live(l.i)) film$(l);
     place(l);
     l.frame.style.visibility = hidden ? "hidden" : "";
+  };
+  // The photo's load settled. A layer on screen while loading fades the photo in over its film, in place (springing
+  // to the photo's own shape if that differs), or shows that it failed.
+  const landed = (l: Layer, ok: boolean) => {
+    if (dead || !live(l.i)) return;
+    const mine = cur === l && l.shown;
+    if (!ok) {
+      l.frame.dataset.load = "failed";
+      if (mine) ctx.status?.(l.i, "failed");
+      return;
+    }
+    if (!mine) { delete l.frame.dataset.load; l.frame.querySelector(".fk-unfurl-mat")?.remove(); l.shown = false; return; }
+    l.frame.dataset.load = "reveal";
+    if (l.frame.isConnected) refit(l);
+    ctx.status?.(l.i, "ready");
+    const ms = ctx.still ? REVEAL_STILL_MS : REVEAL_MS;
+    void fade(l.img, [{ opacity: 0 }, { opacity: 1 }], ms).then(() => {
+      if (l.state !== "ok") return;
+      delete l.frame.dataset.load;
+      l.img.getAnimations?.().forEach((a) => a.cancel());
+      l.frame.querySelector(".fk-unfurl-mat")?.remove();
+      l.shown = false;
+    });
   };
   // Load, decode and attach (hidden) the neighbours of photo i, so a swipe shows them at once.
   const near = new Map<number, Layer>();
   const prefetch = (i: number) => {
     const { prev, next } = neighbours(i, srcs.length, ctx.loop);
-    for (const j of [next, prev]) if (j !== null) void layer(j).then((l) => {
-      if (!l || dead || !cur) return;
-      const { prev: p, next: n } = neighbours(cur.i, srcs.length, ctx.loop);
-      if (j !== p && j !== n) return;
+    for (const j of [next, prev]) {
+      if (j === null) continue;
+      const l = layer(j);
+      if (dead || !cur || l === cur) continue;
       near.set(j, l);
       if (!l.frame.isConnected) attach(l, true);
-    });
+    }
     // Drop layers that are no longer beside the current photo (they stay cached, off the page).
     for (const [j, l] of near) {
-      const { prev: p, next: n } = neighbours(i, srcs.length, ctx.loop);
-      if (j !== p && j !== n && l !== cur) { l.frame.remove(); near.delete(j); }
+      if (j !== prev && j !== next && l !== cur) { l.frame.remove(); near.delete(j); }
     }
   };
 
@@ -149,17 +209,43 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
     if (!raf) raf = requestAnimationFrame(frame);
   });
   const atRest = () => !raf && !held && !strip.held;
+  // Re-place a layer whose shape changed (resize, or its photo's own shape arrived); the current one springs from
+  // where it is now to its new place, so nothing jumps.
+  const refit = (l: Layer) => {
+    if (l !== cur) { place(l); return; }
+    const from = held || raf ? { ...sp.box } : { ...l.rest };
+    place(l);
+    sp.target = l.rest;
+    if (held) return;
+    sp.box = ctx.still ? { ...l.rest } : from;
+    springing = true;
+    paint(l, sp.box, ctx.rOpen, strip.x);
+    void run();
+  };
+  // Layer l is on screen while still loading (or failed): say so.
+  const showing = (l: Layer) => {
+    if (!live(l.i) || l.state === "ok") return;
+    l.shown = true;
+    film$(l);
+    ctx.status?.(l.i, "loading");
+    if (l.state === "failed") ctx.status?.(l.i, "failed");
+  };
 
   return {
     kind: "css",
     async open(i, from, started) {
       area = ctx.area();
-      const t = ++token;
-      const l = await layer(i);
-      if (!l || dead || t !== token) return !!l;
+      const t = turn.take();
+      const l = layer(i);
+      const ok = await l.ready;
+      if (dead || !turn.is(t)) return ok;
+      if (!ok && !live(i)) return false;
       attach(l, false);
       cur = l;
+      lastAspect = l.aspect;
       started?.();
+      // A photo that did not load opens as its frame, which says so (and offers to try again).
+      if (!ok) { l.shown = true; film$(l); from = null; }
       if (ctx.still || !from) {
         sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0];
         await fade(l.frame, [{ opacity: 0, transform: ctx.still ? "none" : "scale(.96)" }, { opacity: 1, transform: "none" }], ctx.still ? FADE_MS : 220);
@@ -170,10 +256,10 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
         await run();
       }
       prefetch(i);
-      return true;
+      return ok;
     },
     rect() { return cur ? { ...cur.rest } : null; },
-    current() { return cur ? { ...sp.box } : null; },
+    current() { return cur && cur.state === "ok" && !cur.shown ? { ...sp.box } : null; },
     place(box) {
       const l = cur;
       if (!l || dead) return;
@@ -189,16 +275,26 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
       await run();
     },
     async show(i, dir, plain) {
-      const t = ++token;
-      const l = await layer(i);
-      if (dead) return true;
-      if (!l) return false;
-      if (t !== token) return true;
+      const t = turn.take();
+      const l = layer(i);
+      // A photo that failed before is asked for again.
+      if (l.state === "failed" && live(i)) load(l);
+      if (!live(i)) {
+        // A video's poster: shown once decoded, as before.
+        if (!(await l.ready)) return dead || !turn.is(t);
+      } else {
+        // A photo in the cache lands within a frame or two; any other shows at once with its loading film.
+        await Promise.race([l.ready, sleep(LOAD_GRACE_MS)]);
+      }
+      if (dead || !turn.is(t)) return true;
       const old = cur;
       const moved = !!old && !atRest();
+      if (old && l.state !== "ok" && !srcs[i].aspect && l.preview === null) { l.aspect = old.aspect; }
       attach(l, false);
       near.delete(i);
       cur = l;
+      if (l.state === "ok") lastAspect = l.aspect;
+      showing(l);
       if (!moved) { sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0]; springing = false; }
       if (old && old !== l) { old.frame.style.visibility = ""; }
       const ms = ctx.still ? FADE_MS : Math.min(UI_MAX_MS, ctx.duration);
@@ -225,12 +321,19 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
       if (old && old !== l && cur === l) { old.frame.getAnimations?.().forEach((a) => a.cancel()); old.frame.remove(); rest(old); }
       l.frame.getAnimations?.().forEach((a) => a.cancel());
       l.frame.style.willChange = "";
-      prefetch(i);
+      if (cur === l) prefetch(i);
       return true;
+    },
+    retry(i) {
+      const l = layers.get(i);
+      if (dead || !l || l !== cur || l.state !== "failed") return;
+      l.frame.dataset.load = "loading";
+      load(l);
+      ctx.status?.(i, "loading");
     },
     async close(to) {
       const l = cur;
-      token++;
+      turn.take();
       held = false; strip.held = false;
       if (!l) return;
       // Hide the neighbours, and close from where the photo is on screen.
@@ -275,11 +378,14 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
         const l = j === null ? undefined : near.get(j);
         if (j !== null && l) {
           // The neighbour becomes current; the strip is re-based so nothing moves on screen.
+          turn.take();
           const old = cur;
           rest(old);
           near.delete(j);
           near.set(old.i, old);
           cur = l;
+          if (l.state === "failed" && live(j)) load(l);
+          showing(l);
           l.frame.style.visibility = "";
           sp.box = { ...l.rest }; sp.target = l.rest; sp.vel = [0, 0, 0, 0]; springing = false;
           strip.x += dir * pitch();
@@ -289,19 +395,10 @@ export function createCssStage(host: HTMLElement, srcs: CssSource[], transition:
       if (cur) prefetch(cur.i);
     },
     resize() {
-      // Spring from where the photo is now to its new place, so a toolbar showing or hiding never makes it jump.
       area = ctx.area();
       const l = cur;
       for (const [, n] of near) if (n !== l) place(n);
-      if (!l) return;
-      const from = held || raf ? { ...sp.box } : { ...l.rest };
-      place(l);
-      sp.target = l.rest;
-      if (held) return;
-      sp.box = ctx.still ? { ...l.rest } : from;
-      springing = true;
-      paint(l, sp.box, ctx.rOpen, strip.x);
-      void run();
+      if (l) refit(l);
     },
     destroy() {
       dead = true;
