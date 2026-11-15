@@ -417,6 +417,7 @@ drumline(el, items, { lightbox: { effect: "ripple", strip: "minimal" } });  // a
       <div class="panel">
         <div class="controls">
           <label class="field"><span>Effect</span><span class="select"><select id="pg-effect"><option value="displacement">Displacement</option><option value="ripple">Ripple</option><option value="fade">Fade</option><option value="zoom">Zoom</option><option value="none">None</option><option value="cloth">Cloth unfurl (custom shader)</option><option value="mosaic">Mosaic (custom shader)</option><option value="yours">Your shader</option></select></span></label>
+          <label class="field"><span>Loading</span><span class="select"><select id="pg-loading"><option value="film">Film</option><option value="frost">Frost</option><option value="liquid">Liquid</option><option value="none">None</option></select></span></label>
           <div class="field"><span id="l-renderer">Renderer</span><div class="radios" role="radiogroup" aria-labelledby="l-renderer"><label><input type="radio" name="renderer" value="auto" checked><span>Auto</span></label><label><input type="radio" name="renderer" value="webgl"><span>WebGL</span></label><label><input type="radio" name="renderer" value="css"><span>CSS</span></label></div></div>
           <div class="field"><span id="l-motion">Reduced motion</span><div class="radios" role="radiogroup" aria-labelledby="l-motion"><label><input type="radio" name="motion" value="system" checked><span>System</span></label><label><input type="radio" name="motion" value="always"><span>Always</span></label><label><input type="radio" name="motion" value="never"><span>Never</span></label></div></div>
           <div class="field"><span>Slider</span><div class="toggles"><label class="toggle"><input type="checkbox" id="pg-loop"> Loop</label><label class="toggle"><input type="checkbox" id="pg-auto"> Autoplay</label></div></div>
@@ -528,12 +529,12 @@ registerEffect("cloth", { fragment: CLOTH, uniforms: { uWave: 0.05 }, duration: 
 registerEffect("mosaic", { fragment: MOSAIC, uniforms: { uTiles: 9 }, duration: 900, easing: "linear", css: "fade" });
 
 // ---------- Settings (the playground drives every demo) ----------
-const S = { effect: "displacement", renderer: "auto", motion: "system", loop: false, autoplay: false, strip: false };
-const lb = (list, start, origin, extra = {}) => unfurl(list, { start, origin, effect: S.effect, renderer: S.renderer, reducedMotion: S.motion, strip: S.strip ? "ruler" : false, ...extra });
+const S = { effect: "displacement", renderer: "auto", motion: "system", loop: false, autoplay: false, strip: false, loading: "film" };
+const lb = (list, start, origin, extra = {}) => unfurl(list, { start, origin, effect: S.effect, renderer: S.renderer, reducedMotion: S.motion, strip: S.strip ? "ruler" : false, loading: S.loading, ...extra });
 
 // ---------- Event log (listens for the DOM events) ----------
 const log = $("#pg-log"), t0 = performance.now();
-const names = ["open-end", "close-end", "change", "slide-change", "animation-end", "error", "expand"];
+const names = ["open-end", "close-end", "change", "slide-change", "animation-end", "error", "expand", "load-start", "load-end"];
 const brief = (d) => Object.entries(d || {}).map(([k, v]) => `${k}: ${typeof v === "string" && v.length > 50 ? v.slice(0, 50).replace(/\s+/g, " ") + "..." : v}`).join(", ");
 for (const n of names) document.addEventListener("frankaa:" + n, (e) => {
   log.querySelector(".empty")?.remove();
@@ -580,7 +581,7 @@ const DRUM = items([...Object.keys(P).slice(0, 6), MP4, ...Object.keys(P).slice(
 let drum = null, D = { preset: "ruler", fluid: "", colorFocus: null };
 const makeDrum = () => {
   drum?.destroy();
-  const o = { preset: D.preset, label: "Places", start: 7, reducedMotion: S.motion, lightbox: { effect: S.effect, renderer: S.renderer, reducedMotion: S.motion } };
+  const o = { preset: D.preset, label: "Places", start: 7, reducedMotion: S.motion, lightbox: { effect: S.effect, renderer: S.renderer, reducedMotion: S.motion, loading: S.loading } };
   if (D.fluid) o.fluid = D.fluid;
   if (D.colorFocus !== null) o.colorFocus = D.colorFocus;
   drum = drumline($("#drum"), DRUM, o);
@@ -636,6 +637,7 @@ for (const r of document.querySelectorAll('input[name="motion"]')) r.addEventLis
 $("#pg-loop").addEventListener("change", (e) => { S.loop = e.target.checked; remakeSliders(); });
 $("#pg-auto").addEventListener("change", (e) => { S.autoplay = e.target.checked; remakeSliders(); });
 $("#pg-strip").addEventListener("change", (e) => { S.strip = e.target.checked; });
+$("#pg-loading").addEventListener("change", (e) => { S.loading = e.target.value; makeDrum(); });
 if (!supported()) { const w = document.querySelector('input[name="renderer"][value="webgl"]'); w.disabled = true; }
 const compile = (andTry) => {
   const message = checkEffect(src.value);

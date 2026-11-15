@@ -33,6 +33,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 - **Origin.** Pass `origin` so the photo springs from and back to its thumbnail, and set `radius` to the thumbnail's border radius. From a slider, use `origin: (n) => slider.image(n)` and `onChange: (n) => slider.go(n, false)`.
 - **Effects.** Default `"displacement"`. Use `"fade"` for a quiet product, `"none"` for instant. Custom shaders: register with `registerEffect` and check with `checkEffect`; never compile shader source from users.
 - **Videos.** Use `{ type: "video", provider, src, poster }` items; give the poster the video's shape. Add the providers to the site's CSP `frame-src`. Never build embed URLs yourself; pass the link and frankaa validates it. mp4 slides come with frankaa's own controls (play, pause, seek, volume, full screen; a tap pauses rather than closes), so do not add native controls or a custom player.
+- **Loading.** Keep the default `loading: "film"` and `loadingDelay`. Pass `thumb`, `width` and `height` on items so a slow photo shows a preview in the right shape. For a custom look use `loading: { fragment, uniforms }` (check it with `checkLoading`) or `loading: (host, state) => cleanup`; never draw a spinner over the dialog yourself, and react to `onLoadStart`/`onLoadEnd` instead of polling.
 - **Extra buttons** go in `topActions` (or `controls`, or React `renderControls` plus `{lightbox.portal}`), never by querying the dialog's DOM.
 - **Cleanup.** `destroy()` fires `onCloseStart`/`onCloseEnd` with `reason: "destroy"`, so reset app state in `onCloseEnd`.
 - **Autoplay** stays off unless the person asks for it.
@@ -55,7 +56,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 
 ## Custom shaders
 
-GLSL ES 1.0 fragment shader with `precision mediump float;`, `varying vec2 vUv`, uniforms `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`, plus your own; write `gl_FragColor`. Macros `coverUv(uv, texSize, resolution)` and `mirrorUv(uv)` are predefined. A compile error fires `onError` with `reason: "shader"` and falls back to CSS. See `llms-full.txt` section 5.10.
+GLSL ES 1.0 fragment shader with `precision mediump float;`, `varying vec2 vUv`, uniforms `uFrom`, `uTo`, `uProgress`, `uResolution`, `uFromSize`, `uToSize`, `uTime`, `uDirection`, plus your own; write `gl_FragColor`. Macros `coverUv(uv, texSize, resolution)` and `mirrorUv(uv)` are predefined. A compile error fires `onError` with `reason: "shader"` and falls back to CSS. See `llms-full.txt` section 5.10. Loading shaders take `uPreview`, `uHasPreview`, `uTime`, `uResolution`, `uFailed` instead (section 5.18); a broken one falls back to the built-in film.
 
 ## Verify the integration
 
