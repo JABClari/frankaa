@@ -106,15 +106,25 @@ export function pickRenderer(pref: RendererPref | undefined, webgl: boolean): "w
   return pref === "css" || !webgl ? "css" : "webgl";
 }
 
-/** What both renderers share with the lightbox. */
-export type StageCtx = { still: boolean; swipeFx?: boolean; rSpot: (i: number) => R4; rOpen: R4; duration: number; area: () => Box; count: number; loop: boolean };
+/** Where a photo the stage is showing stands: drawn with its loading look, arrived, failed, or one WebGL cannot
+ *  draw (a cross-origin photo without CORS headers, or a refused upload: the lightbox then switches to CSS). */
+export type LoadStatus = "loading" | "ready" | "failed" | "fallback";
+
+/** What both renderers share with the lightbox. status: called for the photo on screen as its load goes. */
+export type StageCtx = { still: boolean; swipeFx?: boolean; rSpot: (i: number) => R4; rOpen: R4; duration: number; area: () => Box; count: number; loop: boolean; status?: (i: number, s: LoadStatus) => void };
+/** A photo for a renderer: its file (srcset and sizes so the browser picks), the preview that stands in while it
+ *  loads, its shape when known (width / height), and live: false for a video's poster, which keeps no loading look. */
+export type StageSource = { src: string; srcset?: string; sizes?: string; placeholder?: string; preview?: string | null; aspect?: number; live?: boolean };
 export type Stage = {
   kind: "webgl" | "css";
   /** Show photo i, springing from `from` (or fading in); `started` runs on its first frame. Resolves false when it cannot be shown. */
   open(i: number, from: Box | null, started?: () => void): Promise<boolean>;
-  /** Move to photo i. plain: a short crossfade instead of the effect (used when a video is involved). Resolves
-   *  false when it cannot be shown. */
+  /** Move to photo i at once: to the photo when it is ready, else to its preview with the loading look (the photo
+   *  then dissolves in, in place). plain: a short crossfade instead of the effect (used when a video is involved).
+   *  Resolves when the move has played; false only when a video's poster cannot be shown. */
   show(i: number, dir: 1 | -1, plain?: boolean): Promise<boolean>;
+  /** Ask again for photo i after it failed to load. */
+  retry(i: number): void;
   /** Where the current photo rests when open (for laying a video player over it). */
   rect(): Box | null;
   /** Where the current photo is drawn now. */

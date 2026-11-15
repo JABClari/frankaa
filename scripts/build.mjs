@@ -21,7 +21,7 @@ await build({
     // The shaders are plain strings to esbuild; squeeze their whitespace (one line per line, so #define lines survive).
     name: "glsl-min",
     setup(b) {
-      b.onLoad({ filter: /(lightbox-gl|effects)\.ts$/ }, (a) => ({
+      b.onLoad({ filter: /(lightbox-gl|effects|loading-shaders)\.ts$/ }, (a) => ({
         loader: "ts",
         contents: readFileSync(a.path, "utf8").replace(/`([^`]*)`/g, (_, g) => "`" + g.split("\n").map((l) => l.replace(/\s+/g, " ").replace(/ ?([{}();,=*+\-/<>?:]) ?/g, "$1").trim()).filter(Boolean).join("\n") + "`"),
       }));
