@@ -45,8 +45,17 @@ execFileSync("node_modules/.bin/tsc", ["-p", "tsconfig.json"], { stdio: "inherit
 
 // frankaa/native and frankaa/native/skia: ES modules for Metro, not minified, with the "worklet" directives kept
 // for the app's Reanimated Babel plugin. React Native and its libraries stay imports (optional peers).
+// Each part is its own entry: when esbuild hoists several modules into one file it renames repeated imports
+// (useAnimatedStyle2), and the Babel plugin only recognises Reanimated's hooks by their real names, so their
+// callbacks would not become worklets. A check below fails the build if any worklet hook is ever aliased.
 await build({
-  entryPoints: { "native/index": "src/native/index.ts", "native/skia": "src/native/skia.tsx" },
+  entryPoints: {
+    "native/index": "src/native/index.ts",
+    "native/skia": "src/native/skia.tsx",
+    "native/Procession": "src/native/Procession.tsx",
+    "native/Drumline": "src/native/Drumline.tsx",
+    "native/Unfurl": "src/native/Unfurl.tsx",
+  },
   outdir: "dist",
   bundle: true,
   splitting: true,
@@ -57,6 +66,14 @@ await build({
   legalComments: "none",
   external: ["react", "react/jsx-runtime", "react-native", "react-native-reanimated", "react-native-worklets", "react-native-gesture-handler", "@shopify/react-native-skia"],
 });
+{
+  const HOOKS = ["useAnimatedStyle", "useAnimatedProps", "useDerivedValue", "useAnimatedReaction", "useAnimatedScrollHandler", "useFrameCallback", "useAnimatedGestureHandler"];
+  for (const f of readdirSync("dist/native", { recursive: true })) {
+    if (!String(f).endsWith(".js")) continue;
+    const src = readFileSync(join("dist/native", String(f)), "utf8");
+    for (const h of HOOKS) if (new RegExp(`\\b${h}\\s+as\\s+\\w+|\\b${h}\\d+\\(`).test(src)) throw new Error(`frankaa/native: ${h} is aliased in dist/native/${f}; its callbacks would not become worklets`);
+  }
+}
 // Their declarations need React Native's types, read from an app (FRANKAA_RN_MODULES, see scripts/native-types.mjs).
 if (!checkNative(true)) {
   try { execFileSync("node_modules/.bin/tsc", ["-p", "tsconfig.native.json"], { stdio: "ignore" }); } catch { /* emitted without RN types */ }
@@ -81,7 +98,7 @@ const deps = (file, seen = new Set()) => {
   if (seen.has(file)) return seen;
   seen.add(file);
   const src = read(file).toString();
-  for (const m of src.matchAll(/from"(\.\/[^"]+)"|import"(\.\/[^"]+)"/g)) deps(join(file, "..", m[1] ?? m[2]), seen);
+  for (const m of src.matchAll(/from\s*"(\.\.?\/[^"]+)"|import\s*"(\.\.?\/[^"]+)"/g)) deps(join(file, "..", m[1] ?? m[2]), seen);
   return seen;
 };
 const kb = (b) => (b / 1024).toFixed(2) + " kB";
