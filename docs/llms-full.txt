@@ -45,6 +45,8 @@ import { unfurl } from "frankaa/lightbox";              // lightbox only (about 
 import { drumline } from "frankaa/drumline";            // the strip (about 10 kB gzipped)
 import { frost, liquid } from "frankaa/loading";        // two more loading materials (about 1.4 kB gzipped)
 import { Procession, useUnfurl } from "frankaa/react";  // React 18+ bindings
+import { Procession, Drumline, Unfurl, useOrigins } from "frankaa/native";  // React Native and Expo (Reanimated 4)
+import { skiaUnfurl } from "frankaa/native/skia";  // the unfurl shader on Skia, for Unfurl's renderer
 import "frankaa/style.css";                              // required once, anywhere in the app
 
 Also exported from "frankaa" and "frankaa/lightbox":

@@ -19,6 +19,7 @@ Install: `npm install frankaa`. Import the CSS once: `import "frankaa/style.css"
 - `frankaa/lightbox`: `unfurl(options)`, `supported()`, `registerEffect(name, effect)`, `checkEffect(effect)`, `checkLoading(shader)`, `effectNames()`
 - `frankaa/loading`: `frost`, `liquid` (LoadingShader objects; importing it registers the names "frost" and "liquid"), `registerLoading`
 - `frankaa/react`: `<Procession items ... />`, `<Drumline items preset="ruler" />`, `useUnfurl(items, { strip, ... })` returning `{ open(i), close(), portal }` (renderControls(api) renders into the top bar through `portal`; unmount fires onDestroy, not the close hooks)
+- `frankaa/native` (React Native and Expo; Reanimated 4, react-native-worklets, Gesture Handler 2): `<Procession items index onChange onPress origins />`, `<Drumline items preset index onChange onSelect />`, `<Unfurl ref items index onChange origins strip="ruler" actions renderer />` with `ref.open(i)`; `useOrigins()` shares the spot the lightbox springs from; `haptics(kind)` gets "selection" and "light". `frankaa/native/skia` exports `skiaUnfurl`, the unfurl shader on a Skia RuntimeEffect, for `renderer`
 - `frankaa/style.css`
 
 ## Items (shared)

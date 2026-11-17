@@ -109,6 +109,43 @@ return <>{grid}{lightbox.portal}</>;
 
 `<Procession>` renders its first photo on the server, so the first paint is never empty; the slider keeps it until its own photo has decoded.
 
+### React Native
+
+`frankaa/native` is the same three parts for React Native and Expo, on the same items, labels and motion math as the web. It needs React Native 0.78 or later with the New Architecture, `react-native-reanimated` 4 with `react-native-worklets`, and `react-native-gesture-handler` 2 (all optional peer dependencies; the web bundles carry none of it). Wrap the app in `GestureHandlerRootView` once.
+
+```tsx
+import { useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { Drumline, Procession, Unfurl, useOrigins, type UnfurlHandle } from "frankaa/native";
+import { skiaUnfurl } from "frankaa/native/skia"; // only with @shopify/react-native-skia
+
+const haptics = (k: "selection" | "light") =>
+  k === "light" ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light) : Haptics.selectionAsync();
+
+export function ProductPhotos({ items }) {
+  const [index, setIndex] = useState(0);
+  const origins = useOrigins();
+  const lightbox = useRef<UnfurlHandle>(null);
+  return (
+    <>
+      <Procession items={items} index={index} onChange={setIndex} origins={origins} onPress={(i) => lightbox.current?.open(i)} haptics={haptics} />
+      <Drumline items={items} preset="minimal" index={index} onChange={setIndex} haptics={haptics} />
+      <Unfurl ref={lightbox} items={items} index={index} onChange={setIndex} origins={origins} strip="ruler"
+        renderer={skiaUnfurl} haptics={haptics}
+        actions={(api) => <MyButton label="Make cover" onPress={() => makeCover(api.index)} />} />
+    </>
+  );
+}
+```
+
+- **Procession**: the photos follow the finger 1:1 with the next one peeking in (`peek`, `gap`, `aspectRatio`, `radius`), rubber-band at the ends, and spring to the photo the flick was heading for, carrying its speed. `onPress` is a tap on the photo in view.
+- **Drumline**: tall cards over a ruler of ticks (`preset`: `"ruler"`, `"numbers"`, `"minimal"`, and every look option). The position eases toward its target every frame on the UI thread (`fluid: "lerp"`; `"chain"` and `"bend"` move as `"lerp"` here, `"off"` is a spring); a flick is projected on. Tap a card to select it (`onSelect`); drag along the ruler to run through the pictures.
+- **Unfurl**: opens from the measured spot of the photo you tapped (`origins`, shared through `useOrigins()`) and grows to fit in 360 ms on the iOS sheet curve; it closes in 220 ms with a strong ease-out back to the spot, wherever it is by then. Swipe sideways for the next photo, pull down to close (a flick is enough), tap to close. `strip` adds the drumline filmstrip, `actions` and `topActions` are slots that get `{ index, item, close, next, prev, show }`. The ref has `open(i)`, `close()`, `next()`, `prev()`, `show(i)`.
+- **Keeping them in step**: give every part the same `index` and `onChange`; a part never echoes back a change it reported.
+- **The shader**: `frankaa/native/skia` draws the photo in flight with the unfurl shader (the web's rounded box, with a soft ripple on the way) on a Skia `RuntimeEffect`. Without it, or until its image has loaded, the photo is plain views moved with transforms.
+- **Motion and access**: only transform and opacity animate, all on the UI thread, and reduced motion (`reducedMotion`, default `"system"`) makes the lightbox a crossfade and the strips step. `haptics` gets `"selection"` per photo and `"light"` when a close commits. Each strip is one adjustable element (swipe up or down to move, double tap to open) with the same labels as the web (`labels`); the lightbox close button is 44 pt.
+- **Images**: React Native's `Image` by default; `renderImage={({ uri }) => <ExpoImage source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />}` swaps in your own. Pass `width` and `height` on items so the lightbox knows each photo's shape before it loads. Pass `insets` (for example from `useSafeAreaInsets()`) so the bars clear the notch and the home indicator.
+
 ## procession (the slider)
 
 `procession(element, items, options)` (or `procession(element, { items, ...options })`) turns an element into a slider and returns its controls. The element keeps its own children. It is 4:3 by default; size it with CSS.
@@ -485,12 +522,13 @@ Minified and gzipped, each with the code it pulls in:
 | Import | Size |
 | --- | --- |
 | `frankaa/slider` | 5.0 kB |
-| `frankaa/lightbox` | 23.9 kB (the filmstrip loads only when used) |
-| `frankaa/drumline` | 9.9 kB (the lightbox loads on the first tap) |
+| `frankaa/lightbox` | 24.2 kB (the filmstrip loads only when used) |
+| `frankaa/drumline` | 10.2 kB (the lightbox loads on the first tap) |
 | `frankaa/loading` | 1.4 kB (the frost and liquid materials) |
-| `frankaa` (all three) | 32.9 kB |
-| `frankaa/react` (all three, with bindings) | 33.8 kB |
+| `frankaa` (all three) | 33.1 kB |
+| `frankaa/react` (all three, with bindings) | 34.0 kB |
 | `frankaa/style.css` | 4.7 kB |
+| `frankaa/native` (all three for React Native) | 11.9 kB before your app's bundler minifies it; `frankaa/native/skia` 1.3 kB |
 
 ## Performance
 
@@ -517,6 +555,7 @@ npm install
 npm run build      # dist/ and docs/lib/, with a size report
 npm test           # node --test, needs Node 22.18 or later
 npm run typecheck
+FRANKAA_RN_MODULES=../my-expo-app/node_modules npm run typecheck:native # frankaa/native against an app's React Native types
 npm run check:keys # browser keyboard check; needs Playwright (see the script's header)
 npm run check:touch # phone check: real touch swipes, peeking, rubber-band, axis lock, taps, scroll lock
 npm run check:perf  # frame rate: fps, p95 frame time, dropped frames, long tasks

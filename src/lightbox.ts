@@ -3,14 +3,16 @@
 // CSS (transform and opacity only). "auto" uses WebGL where it is there. With reduced motion it is a plain fade.
 // If WebGL cannot draw a photo (no WebGL, or a cross-origin photo without CORS headers) it switches to CSS and
 // says so through onError, so nothing fails silently.
-import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type LoadStatus, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
+import { clampPan, isZoomed, lockAxis, neighbours, onScreen, pickRenderer, pickSlide, project, pullFrame, settleZoom, stageBox, swipeIntent, toR4, zoomAbout, STRIP_GAP, type Box, type LoadStatus, type Radius, type RendererPref, type Stage, type StageCtx } from "./lightbox-math";
 import { checkEffect, checkLoading, createGlStage, supported } from "./lightbox-gl";
 import { createCssStage } from "./lightbox-css";
 import { getEffect, registerEffect, effectNames, type Effect, type EffectName, type CssTransition, type Easing, type UniformValue } from "./effects";
 import { fill, lightboxKey, resolveReduced, rubber, velocity, type ReducedMotion } from "./shared";
+import { UNFURL_LABELS, type UnfurlLabels } from "./lightbox-labels";
+export { UNFURL_LABELS, type UnfurlLabels };
 import { CHEVRON, CHEVRON_LEFT, CROSS, PLAY, el, emitter, icon, systemReduces, type Icons } from "./dom";
 import { embedUrl, type MediaProvider } from "./media";
-import { videoPlayer, type VideoLabels, type VideoPlayer } from "./video";
+import { videoPlayer, type VideoPlayer } from "./video";
 import type { Drumline, DrumlineOptions } from "./drumline";
 import { drumlineLook, stripOptions, type DrumlinePreset } from "./drumline-math";
 import { readArgs, fullSrc, previewOf, isVideo as isVideoItem, type ImageItem, type Item, type Items, type VideoItem } from "./items";
@@ -38,28 +40,6 @@ export type UnfurlAction = {
 export type MoveHow = "key" | "button" | "swipe" | "strip" | "api";
 export type AnimationType = "open" | "close" | "change";
 
-export type UnfurlLabels = {
-  /** The dialog's name. Default "Photos". */
-  dialog: string;
-  close: string;
-  next: string;
-  previous: string;
-  /** Read out on each photo. {n}, {total}. Default "Photo {n} of {total}". The photo's alt follows it. */
-  position: string;
-  /** Read out on a video slide. Default "Video {n} of {total}". */
-  videoPosition: string;
-  /** The play button on a video slide. Default "Play video". */
-  play: string;
-  /** The visible counter. {n}, {total}. Default "{n} / {total}". */
-  counter: string;
-  /** Read out when a photo is still loading after loadingDelay. {n}. Default "Loading photo {n}". */
-  loading: string;
-  /** Shown in the frame of a photo that did not load. Default "This photo didn't load". */
-  failed: string;
-  /** The button that asks for it again. Default "Retry". */
-  retry: string;
-} & Omit<VideoLabels, "play">;
-export const UNFURL_LABELS: UnfurlLabels = { dialog: "Photos", close: "Close", next: "Next photo", previous: "Previous photo", position: "Photo {n} of {total}", videoPosition: "Video {n} of {total}", play: "Play video", counter: "{n} / {total}", loading: "Loading photo {n}", failed: "This photo didn't load", retry: "Retry", pause: "Pause video", mute: "Mute", unmute: "Unmute", seek: "Seek", volume: "Volume", fullscreen: "Full screen", exitFullscreen: "Exit full screen", timeOf: "{time} of {duration}" };
 
 /** cors: a cross-origin photo without CORS headers; load: the photo did not load; webgl: no WebGL (only when
  *  renderer is "webgl"); shader: the effect did not compile (fallback "css"), or your loading shader did not
@@ -678,7 +658,6 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch: { d0: number; m0: { x: number; y: number }; box0: Box } | null = null;
   let afterPinch = false;
-  const pull = (dy: number) => Math.min(1, Math.max(0, dy) / (window.innerHeight * 0.5));
   // The strip's width is read once per drag, at the first move, never per frame.
   let stripW = 0;
   const stripWidth = () => stripW || (stripW = ctx.area().w);
@@ -773,12 +752,12 @@ export function unfurl(a: Items | UnfurlOptions, b?: Omit<UnfurlOptions, "items"
       const toward = dx < 0 ? nb.next : nb.prev;
       stage.pan(d.px, isVideo(photos[index]) || (toward !== null && isVideo(photos[toward])));
     } else {
-      const p = pull(dy);
+      const f = pullFrame(dx, dy, window.innerHeight);
       hideMedia();
       root.dataset.pulling = "true";
-      stage.track({ x: dx * 0.5, y: dy > 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p });
+      stage.track(f);
       bg.style.transition = "none";
-      bg.style.opacity = String(1 - p * 0.75);
+      bg.style.opacity = String(f.bg);
     }
   });
 
