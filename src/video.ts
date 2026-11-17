@@ -2,19 +2,9 @@
 // closes, and play, seek, volume and full screen look the same in every browser. Built node by node (no innerHTML).
 import { PAUSE, PLAY, el, icon } from "./dom";
 import { clampTime, formatTime, fraction, playerKey } from "./video-math";
+import type { VideoLabels } from "./video-math";
+export type { VideoLabels };
 
-export type VideoLabels = {
-  play: string;
-  pause: string;
-  mute: string;
-  unmute: string;
-  seek: string;
-  volume: string;
-  fullscreen: string;
-  exitFullscreen: string;
-  /** Read out on the seek slider: "{time} of {duration}". */
-  timeOf: string;
-};
 
 export const VOLUME = "M11 5 6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13";
 export const MUTED = "M11 5 6 9H3v6h3l5 4V5zM22 9l-6 6M16 9l6 6";

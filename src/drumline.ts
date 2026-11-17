@@ -11,23 +11,18 @@
 // - "bend": lerp, and speed bulges the strip around its middle (WebGL; a DOM version when WebGL is missing, the
 //   pictures are cross-origin without CORS headers, or frames run slow).
 // Frames are transforms and opacity (and one canvas for bend); layout is read on start and resize only.
-import { bandPos, bump, centreAt, centres, drumlineLook, pad, readout, scalesAt, tickAt, wheelDelta, type DrumlineLook, type DrumlinePreset } from "./drumline-math";
+import { bandPos, bump, drumlineLook, lerpStep, LERP_RATE, pad, readout, releaseTarget, stripLayout, tickAt, tickLift, wheelDelta, type DrumlineLook, type DrumlinePreset } from "./drumline-math";
 export { DRUMLINE_PRESETS, drumlineLook, stripOptions, type DrumlineFluid, type DrumlineLook, type DrumlinePreset } from "./drumline-math";
-import { project, springStep, settled, SPRING_OPEN } from "./lightbox-math";
+import { springStep, settled, SPRING_OPEN } from "./lightbox-math";
 import { fill, resolveReduced, velocity, type ReducedMotion } from "./shared";
+import { DRUMLINE_LABELS, type DrumlineLabels } from "./drumline-math";
+export { DRUMLINE_LABELS, type DrumlineLabels };
 import { el, emitter, placeholderStyle, systemReduces } from "./dom";
 import { createBend, type BendCard, type BendRenderer } from "./drumline-gl";
 import { readArgs, thumbSrc, isVideo, type Items } from "./items";
 import type { UnfurlOptions } from "./lightbox";
 
 
-export type DrumlineLabels = {
-  /** The strip's name. Default "Pictures". */
-  region: string;
-  /** Read out on each change, and each card's name. {n}, {total}. Default "Picture {n} of {total}". */
-  position: string;
-};
-export const DRUMLINE_LABELS: DrumlineLabels = { region: "Pictures", position: "Picture {n} of {total}" };
 
 export type DrumHow = "drag" | "wheel" | "ruler" | "key" | "tap" | "api";
 export type DrumlineError = { index: number; src: string; reason: "load" | "webgl" | "cors" | "slow"; fallback: "dom" | "none" };
@@ -213,15 +208,13 @@ export function drumline(root: HTMLElement, a: Items | DrumlineOptions, b?: Omit
   const light = (i: number) => (look.colorFocus ? 0.84 + 0.16 * bump(i - pos, 2.5) : 1);
   let lastFilter: string[] = [];
   const paint = () => {
-    const s = scalesAt(n, pos, grow);
-    const c = centres(s, W, GAP);
-    const off = VW / 2 - centreAt(c, pos) - (pos < 0 ? pos * pitch() : pos > n - 1 ? (pos - (n - 1)) * pitch() : 0);
+    const { x: xs, s } = stripLayout(n, pos, grow, W, GAP, VW);
     const amt = fluid === "bend" && !still() ? Math.min(1, Math.abs(speed) / 2200) * 0.22 : 0;
     const reach = VW * 0.42, mid = VH / 2;
     const glCards: BendCard[] = [];
     for (let i = 0; i < n; i++) {
       const lag = fluid === "chain" ? (cpos[i] - pos) * pitch() : 0;
-      const x = off + c[i] - W / 2 - lag;
+      const x = xs[i] - lag;
       const card = cards[i];
       if (x + W * s[i] < -W * 2 || x - W * s[i] > VW + W * 2) { if (card.style.visibility !== "hidden") card.style.visibility = "hidden"; continue; }
       if (card.style.visibility) card.style.visibility = "";
@@ -252,7 +245,7 @@ export function drumline(root: HTMLElement, a: Items | DrumlineOptions, b?: Omit
     if (gl) gl.draw(glCards, amt, VW / 2, reach, mid);
     const fp = focusPos ?? pos;
     for (let i = 0; i < ticks.length; i++) {
-      const lift = feedback ? bump(i - fp, 3) : i === Math.round(fp) ? 1 : 0;
+      const lift = tickLift(i, ticks.length, n, fp, feedback);
       ticks[i].style.transform = `scaleY(${1 + 1.25 * lift})`;
       ticks[i].style.opacity = String(0.3 + 0.7 * lift);
     }
@@ -281,8 +274,8 @@ export function drumline(root: HTMLElement, a: Items | DrumlineOptions, b?: Omit
     else if (fluid !== "off") {
       // Damped follow: ease toward the target (quicker while held, so the strip trails the hand a touch).
       // A flick or wheel glides out slowly (as measured); a jump from the keys, the ruler or the code is quicker.
-      const k = held ? 16 : lastHow === "drag" || lastHow === "wheel" ? 4.6 : 10;
-      pos += (target - pos) * (1 - Math.exp(-dt * k));
+      const k = held ? LERP_RATE.held : lastHow === "drag" || lastHow === "wheel" ? LERP_RATE.glide : LERP_RATE.jump;
+      pos = lerpStep(pos, target, dt, k);
       if (!held && Math.abs(target - pos) * W < 0.3) pos = target; else busy = true;
     } else if (!held) {
       const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
@@ -354,9 +347,7 @@ export function drumline(root: HTMLElement, a: Items | DrumlineOptions, b?: Omit
     held = false;
     const lastMove = d.samples[d.samples.length - 1];
     const vx = e.timeStamp - lastMove.t > 100 ? 0 : velocity(d.samples).vx;
-    const from = fluid === "off" ? pos : target;
-    const end = from + (inertia ? project(-vx) : 0) / pitch();
-    target = snap ? clampI(Math.round(end)) : Math.min(n - 1, Math.max(0, end));
+    target = releaseTarget(fluid === "off" ? pos : target, vx, pitch(), n, inertia, snap);
     vel = inertia ? -vx / pitch() : 0;
     kick();
   };

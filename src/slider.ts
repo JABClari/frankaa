@@ -5,26 +5,13 @@
 import { clampIndex, indexAt } from "./slider-math";
 import { readArgs, slideSrc, type ImageItem, type Item, type Items } from "./items";
 import { fill, nextIndex, resolveReduced, sliderKey, type ReducedMotion } from "./shared";
+import { PROCESSION_LABELS, type ProcessionLabels } from "./slider-math";
+export { PROCESSION_LABELS, type ProcessionLabels };
 import { CHEVRON, CHEVRON_LEFT, PAUSE, PLAY, el, emitter, icon, placeholderStyle, systemReduces, type Icons } from "./dom";
 
 /** A picture for the slider: the shared item format (see items.ts). The slider shows src (a video's poster). */
 export type Photo = ImageItem;
 
-export type ProcessionLabels = {
-  /** The slider's name. Default "Photos". */
-  region: string;
-  /** Added to the track's name for keyboard users. Default "use the arrow keys to move". */
-  hint: string;
-  next: string;
-  previous: string;
-  pause: string;
-  play: string;
-  /** Read out on each change. {n}, {total}. Default "Photo {n} of {total}". */
-  position: string;
-  /** The visible counter (option counter). {n}, {total}. Default "{n} / {total}". */
-  counter: string;
-};
-export const PROCESSION_LABELS: ProcessionLabels = { region: "Photos", hint: "use the arrow keys to move", next: "Next photo", previous: "Previous photo", pause: "Pause slideshow", play: "Play slideshow", position: "Photo {n} of {total}", counter: "{n} / {total}" };
 
 export type SlideHow = "scroll" | "key" | "button" | "autoplay" | "api";
 export type ProcessionHooks = {

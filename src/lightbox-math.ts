@@ -1,10 +1,13 @@
 // Pure helpers for the lightbox (unfurl): boxes, the spring, the ease and the swipe rule.
 // No DOM here, so they run under node --test.
+// Functions starting with "worklet" also run on the UI thread in frankaa/native (Reanimated); the web build strips it.
+import { rubber } from "./shared.ts";
 
 export type Box = { x: number; y: number; w: number; h: number };
 
 /** A box of this aspect ratio (w / h) fitted inside the area, centred. */
 export function containBox(aspect: number, area: Box): Box {
+  "worklet";
   const a = aspect > 0 && Number.isFinite(aspect) ? aspect : 1.5;
   let w = area.w, h = w / a;
   if (h > area.h) { h = area.h; w = h * a; }
@@ -48,6 +51,7 @@ export function easeInOut(t: number): number {
  */
 export type Swipe = "next" | "prev" | "close" | "tap" | null;
 export function swipeIntent(dx: number, dy: number, vx = 0, vy = 0): Swipe {
+  "worklet";
   if (Math.abs(dx) < 6 && Math.abs(dy) < 6 && Math.hypot(vx, vy) < 200) return "tap";
   if (Math.abs(dx) > Math.abs(dy)) {
     const back = vx * dx < 0 && Math.abs(vx) > 200;
@@ -61,6 +65,7 @@ export function swipeIntent(dx: number, dy: number, vx = 0, vy = 0): Swipe {
 
 /** A rect is usable as a spot to spring from or back to: big enough and at least partly on screen. */
 export function onScreen(r: { left: number; top: number; width: number; height: number }, vw: number, vh: number): boolean {
+  "worklet";
   return r.width > 4 && r.height > 4 && r.left + r.width > 0 && r.top + r.height > 0 && r.left < vw && r.top < vh;
 }
 
@@ -85,6 +90,7 @@ export const toR4 = (r: Radius | undefined, fallback: number): R4 => (Array.isAr
 
 /** The corner radii on the way: they follow how far the box still has to go (open: spot radii to open radii). */
 export function radiusAt(closing: boolean, box: Box, target: Box, rSpot: R4, rOpen: R4): R4 {
+  "worklet";
   const left = Math.min(1, Math.abs(box.w - target.w) / Math.max(1, target.w));
   const k = closing ? 1 - left : left;
   return rOpen.map((o, j) => o + (rSpot[j] - o) * k) as R4;
@@ -95,6 +101,7 @@ export function radiusAt(closing: boolean, box: Box, target: Box, rSpot: R4, rOp
  * left) and its photo scales back (origin centre) so it stays undistorted and covers the box.
  */
 export function flipFrame(box: Box, rest: Box): { tx: number; ty: number; sx: number; sy: number; ix: number; iy: number } {
+  "worklet";
   const sx = box.w / Math.max(1, rest.w), sy = box.h / Math.max(1, rest.h);
   const c = Math.max(sx, sy);
   return { tx: box.x - rest.x, ty: box.y - rest.y, sx, sy, ix: c / sx, iy: c / sy };
@@ -150,10 +157,33 @@ export type Stage = {
   destroy(): void;
 };
 
+/** The box t of the way from a to b (t 0 is a, 1 is b). */
+export function mixBox(a: Box, b: Box, t: number): Box {
+  "worklet";
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t };
+}
+
 /** The open box moved by a drag offset and scaled about its centre. */
 export function draggedBox(rest: Box, o: { x: number; y: number; s: number }): Box {
+  "worklet";
   const w = rest.w * o.s, h = rest.h * o.s;
   return { x: rest.x + o.x + (rest.w - w) / 2, y: rest.y + o.y + (rest.h - h) / 2, w, h };
+}
+
+/** How far a pull down has gone toward closing: 0 at rest, 1 at half the view's height. */
+export function pullAmount(dy: number, vh: number): number {
+  "worklet";
+  return Math.min(1, Math.max(0, dy) / Math.max(1, vh * 0.5));
+}
+
+/**
+ * The photo while a finger pulls it: it follows the finger down (sideways at half speed, up with resistance) and
+ * shrinks a little; the backdrop fades with the pull. x, y, s go to draggedBox; bg is the backdrop's opacity.
+ */
+export function pullFrame(dx: number, dy: number, vh: number): { x: number; y: number; s: number; bg: number } {
+  "worklet";
+  const p = pullAmount(dy, vh);
+  return { x: dx * 0.5, y: dy >= 0 ? dy : -rubber(-dy, 60), s: 1 - 0.15 * p, bg: 1 - p * 0.75 };
 }
 
 /** The space between photos in the swipe strip, in CSS px. */
@@ -170,6 +200,7 @@ export function neighbours(i: number, n: number, loop: boolean): { prev: number 
 
 /** Where a fling would come to rest: the distance a release velocity (px/s) carries with iOS-like deceleration. */
 export function project(v: number, decel = 0.998): number {
+  "worklet";
   return ((v / 1000) * decel) / (1 - decel);
 }
 
@@ -178,6 +209,7 @@ export function project(v: number, decel = 0.998): number {
  * moves (vx), then take the nearest photo. 1 is the next photo, -1 the previous, 0 stays.
  */
 export function pickSlide(x: number, vx: number, pitch: number, canPrev: boolean, canNext: boolean): -1 | 0 | 1 {
+  "worklet";
   const end = x + project(vx);
   if (end < -pitch / 2 && canNext) return 1;
   if (end > pitch / 2 && canPrev) return -1;
@@ -189,6 +221,7 @@ export function pickSlide(x: number, vx: number, pitch: number, canPrev: boolean
  * so a slightly diagonal sideways swipe never turns into a pull to close.
  */
 export function lockAxis(dx: number, dy: number, slop = 10): "x" | "y" | null {
+  "worklet";
   if (Math.hypot(dx, dy) < slop) return null;
   return Math.abs(dy) > Math.abs(dx) * 1.5 ? "y" : "x";
 }

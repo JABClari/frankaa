@@ -34,3 +34,17 @@ export function playerKey(key: string): PlayerKeyAction {
     default: return null;
   }
 }
+
+/** The video player's labels (part of the lightbox's). */
+export type VideoLabels = {
+  play: string;
+  pause: string;
+  mute: string;
+  unmute: string;
+  seek: string;
+  volume: string;
+  fullscreen: string;
+  exitFullscreen: string;
+  /** Read out on the seek slider: "{time} of {duration}". */
+  timeOf: string;
+};

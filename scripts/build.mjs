@@ -4,6 +4,19 @@ import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
+import { checkNative } from "./native-types.mjs";
+
+// The pure helpers mark the functions frankaa/native runs on the UI thread with a "worklet" directive. The web
+// bundles do not need it, so it is taken out of them.
+const stripWorklet = {
+  name: "strip-worklet",
+  setup(b) {
+    b.onLoad({ filter: /(shared|slider-math|drumline-math|lightbox-math)\.ts$/ }, (a) => ({
+      loader: "ts",
+      contents: readFileSync(a.path, "utf8").replace(/^\s*"worklet";\n/gm, ""),
+    }));
+  },
+};
 
 rmSync("dist", { recursive: true, force: true });
 await build({
@@ -17,7 +30,7 @@ await build({
   external: ["react", "react-dom"],
   chunkNames: "chunks/[name]-[hash]",
   legalComments: "none",
-  plugins: [{
+  plugins: [stripWorklet, {
     // The shaders are plain strings to esbuild; squeeze their whitespace (one line per line, so #define lines survive).
     name: "glsl-min",
     setup(b) {
@@ -29,6 +42,26 @@ await build({
   }],
 });
 execFileSync("node_modules/.bin/tsc", ["-p", "tsconfig.json"], { stdio: "inherit" });
+
+// frankaa/native and frankaa/native/skia: ES modules for Metro, not minified, with the "worklet" directives kept
+// for the app's Reanimated Babel plugin. React Native and its libraries stay imports (optional peers).
+await build({
+  entryPoints: { "native/index": "src/native/index.ts", "native/skia": "src/native/skia.tsx" },
+  outdir: "dist",
+  bundle: true,
+  splitting: true,
+  format: "esm",
+  target: "es2020",
+  jsx: "automatic",
+  chunkNames: "native/chunks/[name]-[hash]",
+  legalComments: "none",
+  external: ["react", "react/jsx-runtime", "react-native", "react-native-reanimated", "react-native-worklets", "react-native-gesture-handler", "@shopify/react-native-skia"],
+});
+// Their declarations need React Native's types, read from an app (FRANKAA_RN_MODULES, see scripts/native-types.mjs).
+if (!checkNative(true)) {
+  try { execFileSync("node_modules/.bin/tsc", ["-p", "tsconfig.native.json"], { stdio: "ignore" }); } catch { /* emitted without RN types */ }
+  console.warn("frankaa/native: declarations written without React Native's types; set FRANKAA_RN_MODULES to check them.");
+}
 writeFileSync("dist/style.css", (await transform(readFileSync("src/style.css", "utf8"), { loader: "css", minify: true })).code);
 
 // The docs page loads the built files from docs/lib, so it works on its own (GitHub Pages included).
@@ -36,7 +69,7 @@ rmSync("docs/lib", { recursive: true, force: true });
 mkdirSync("docs/lib", { recursive: true });
 for (const f of readdirSync("dist", { recursive: true })) {
   const p = join("dist", f);
-  if (statSync(p).isFile() && !p.endsWith(".d.ts")) cpSync(p, join("docs/lib", f));
+  if (statSync(p).isFile() && !p.endsWith(".d.ts") && !f.startsWith("native")) cpSync(p, join("docs/lib", f));
 }
 
 // The AI-facing files are served from the docs site too.
@@ -57,6 +90,10 @@ for (const e of ["slider", "lightbox", "drumline", "loading", "index", "react"])
   const files = [...deps(`dist/${e}.js`)];
   const all = Buffer.concat(files.map(read));
   console.log(`frankaa/${e.padEnd(10)} ${kb(all.length).padStart(9)}  ${kb(gzipSync(all, { level: 9 }).length).padStart(9)}`);
+}
+for (const e of ["native/index", "native/skia"]) {
+  const all = Buffer.concat([...deps(`dist/${e}.js`)].map(read));
+  console.log(`frankaa/${e.replace("/index", "").padEnd(10)} ${kb(all.length).padStart(9)}  ${kb(gzipSync(all, { level: 9 }).length).padStart(9)}  (not minified; Metro minifies)`);
 }
 const css = read("dist/style.css");
 console.log(`style.css          ${kb(css.length).padStart(9)}  ${kb(gzipSync(css, { level: 9 }).length).padStart(9)}`);

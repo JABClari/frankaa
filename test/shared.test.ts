@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eventName, fill, isCrossOrigin, lightboxKey, nextIndex, resolveReduced, rubber, sliderKey, velocity } from "../src/shared.ts";
+import { band, eventName, fill, isCrossOrigin, lightboxKey, nextIndex, resolveReduced, rubber, sliderKey, velocity } from "../src/shared.ts";
 
 test("fill puts values into label templates and leaves unknown keys", () => {
   assert.equal(fill("Photo {n} of {total}", { n: 2, total: 5 }), "Photo 2 of 5");
@@ -74,4 +74,15 @@ test("rubber resists past the limit and never passes it", () => {
   assert.ok(rubber(30, 60) < 30);
   assert.ok(rubber(1000, 60) < 60);
   assert.ok(rubber(100, 60) > rubber(50, 60));
+});
+
+test("band keeps a value inside its range and rubber-bands past either end", () => {
+  assert.equal(band(-50, -100, 0, 80), -50);
+  assert.equal(band(0, -100, 0, 80), 0);
+  const over = band(40, -100, 0, 80);
+  assert.ok(over > 0 && over < 40, "past the max it moves less than the finger");
+  assert.ok(band(1e6, -100, 0, 80) < 80, "and never past the limit");
+  const under = band(-140, -100, 0, 80);
+  assert.ok(under < -100 && under > -140);
+  assert.equal(band(-140, -100, 0, 80), -100 - rubber(40, 80));
 });

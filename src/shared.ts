@@ -1,4 +1,5 @@
 // Pure helpers shared by both parts. No DOM here, so they run under node --test.
+// Functions starting with "worklet" also run on the UI thread in frankaa/native (Reanimated); the web build strips it.
 
 /** Fill a label template: "Photo {n} of {total}" with { n: 2, total: 5 } gives "Photo 2 of 5". Unknown keys stay. */
 export function fill(template: string, vars: Record<string, string | number>): string {
@@ -16,6 +17,7 @@ export function resolveReduced(pref: ReducedMotion | undefined, systemReduces: b
 
 /** The index one step away, wrapping when loop is on; null when there is nowhere to go. */
 export function nextIndex(i: number, d: number, n: number, loop: boolean): number | null {
+  "worklet";
   if (n < 2) return null;
   const t = i + d;
   if (t >= 0 && t < n) return t;
@@ -75,6 +77,15 @@ export function velocity(samples: { x: number; y: number; t: number }[]): { vx: 
 
 /** Rubber-band: past a limit, a drag moves only a fraction of the distance (Apple-style resistance). */
 export function rubber(d: number, limit: number, k = 0.55): number {
+  "worklet";
   if (d <= 0 || limit <= 0) return d <= 0 ? 0 : d;
   return (1 - 1 / ((d * k) / limit + 1)) * limit;
+}
+
+/** Keep x between min and max with rubber-band resistance past either (limit px is the most it can go past). */
+export function band(x: number, min: number, max: number, limit: number): number {
+  "worklet";
+  if (x > max) return max + rubber(x - max, limit);
+  if (x < min) return min - rubber(min - x, limit);
+  return x;
 }

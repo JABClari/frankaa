@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { containBox, easeInOut, onScreen, settled, springStep, stageBox, swipeIntent, SPRING_CLOSE, SPRING_OPEN } from "../src/lightbox-math.ts";
+import { containBox, easeInOut, mixBox, onScreen, pullAmount, pullFrame, settled, springStep, stageBox, swipeIntent, SPRING_CLOSE, SPRING_OPEN } from "../src/lightbox-math.ts";
 
 test("containBox fits wide and tall photos inside the area, centred", () => {
   const area = { x: 0, y: 0, w: 1000, h: 500 };
@@ -195,4 +195,29 @@ test("settleZoom snaps back under 1x, caps at max, and clamps", () => {
   assert.equal(capped.w, 3200);
   assert.ok(isZoomed(capped, rest));
   assert.ok(!isZoomed(rest, rest));
+});
+
+test("mixBox goes from one box to another", () => {
+  const a = { x: 0, y: 0, w: 100, h: 50 }, b = { x: 100, y: 200, w: 300, h: 150 };
+  assert.deepEqual(mixBox(a, b, 0), a);
+  assert.deepEqual(mixBox(a, b, 1), b);
+  assert.deepEqual(mixBox(a, b, 0.5), { x: 50, y: 100, w: 200, h: 100 });
+});
+
+test("a pull down follows the finger, shrinks the photo a little and fades the backdrop", () => {
+  assert.equal(pullAmount(0, 800), 0);
+  assert.equal(pullAmount(200, 800), 0.5);
+  assert.equal(pullAmount(2000, 800), 1);
+  assert.equal(pullAmount(-50, 800), 0);
+  assert.deepEqual(pullFrame(0, 0, 800), { x: 0, y: 0, s: 1, bg: 1 });
+  const f = pullFrame(40, 400, 800);
+  assert.equal(f.x, 20); // sideways at half speed
+  assert.equal(f.y, 400); // down 1:1
+  assert.equal(f.s, 0.85);
+  assert.equal(f.bg, 0.25);
+  const up = pullFrame(0, -200, 800);
+  assert.ok(up.y < 0 && up.y > -60, "up resists");
+  // With no pull the photo sits at its open box.
+  const rest = { x: 10, y: 20, w: 300, h: 200 };
+  assert.deepEqual(draggedBox(rest, pullFrame(0, 0, 800)), rest);
 });

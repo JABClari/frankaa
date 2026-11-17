@@ -43,6 +43,16 @@
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
     },
+    "./native": {
+      "types": "./dist/native/index.d.ts",
+      "react-native": "./dist/native/index.js",
+      "import": "./dist/native/index.js"
+    },
+    "./native/skia": {
+      "types": "./dist/native/skia.d.ts",
+      "react-native": "./dist/native/skia.js",
+      "import": "./dist/native/skia.js"
+    },
     "./style.css": "./dist/style.css"
   },
   "files": [
@@ -58,6 +68,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:native": "node scripts/native-types.mjs",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "check:keys": "node scripts/check-keys.mjs",
     "check:touch": "node scripts/check-touch.mjs",
@@ -90,17 +101,41 @@
     "ai-ready",
     "ruler",
     "stories",
-    "scrubber"
+    "scrubber",
+    "react-native",
+    "expo",
+    "reanimated",
+    "skia"
   ],
   "peerDependencies": {
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "react-native": ">=0.78",
+    "react-native-reanimated": ">=4.1",
+    "react-native-worklets": ">=0.5",
+    "react-native-gesture-handler": ">=2.28",
+    "@shopify/react-native-skia": ">=2"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    },
+    "react-native-reanimated": {
+      "optional": true
+    },
+    "react-native-worklets": {
+      "optional": true
+    },
+    "react-native-gesture-handler": {
+      "optional": true
+    },
+    "@shopify/react-native-skia": {
       "optional": true
     }
   },

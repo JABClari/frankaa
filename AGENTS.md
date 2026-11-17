@@ -20,6 +20,7 @@ Zero runtime dependencies. React is an optional peer dependency, needed only for
 | Frost and liquid loading looks | `import "frankaa/loading"` (then `loading: "frost"`), or `import { frost, liquid } from "frankaa/loading"` |
 | Both | `import { procession, unfurl } from "frankaa"` |
 | React | `import { Procession, Drumline, useUnfurl } from "frankaa/react"` |
+| React Native and Expo | `import { Procession, Drumline, Unfurl, useOrigins } from "frankaa/native"` (Skia shader: `import { skiaUnfurl } from "frankaa/native/skia"`) |
 | Styles (always, once) | `import "frankaa/style.css"` |
 
 ## Decision rules
